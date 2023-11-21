@@ -101,10 +101,9 @@ namespace ghost
         void TaskSwitchto(LotteryTask *task, const Message &msg) final;
 
     private:
-        //   void FifoSchedule(const Cpu& cpu, BarrierToken agent_barrier,
-        //                     bool prio_boosted);
-        //   void TaskOffCpu(FifoTask* task, bool blocked, bool from_switchto);
-        //   void TaskOnCpu(FifoTask* task, Cpu cpu);
+        void LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier);
+        void TaskOffCpu(FifoTask *task, bool blocked, bool from_switchto);
+        void TaskOnCpu(FifoTask *task, Cpu cpu);
         void Migrate(LotteryTask *task, Cpu cpu, BarrierToken seqnum);
         Cpu AssignCpu(LotteryTask *task);
 
@@ -112,8 +111,8 @@ namespace ghost
         {
             LotteryTask *current = nullptr;
             std::unique_ptr<Channel> channel = nullptr;
-            std::vector<LotteryTask> run_queue;
-            int total_tickets;
+            std::vector<LotteryTask *> run_queue;
+            int total_tickets = 0;
         } ABSL_CACHELINE_ALIGNED;
 
         inline CpuState *cpu_state(const Cpu &cpu) { return &cpu_states_[cpu.id()]; }
