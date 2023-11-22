@@ -339,6 +339,15 @@ namespace ghost
         task->preempted = false;
     }
 
+    std::unique_ptr<LotteryScheduler> MultiThreadedLotteryScheduler(Enclave *enclave,
+                                                                    CpuList cpulist)
+    {
+        auto allocator = std::make_shared<ThreadSafeMallocTaskAllocator<LotteryTask>>();
+        auto scheduler = std::make_unique<LotteryScheduler>(enclave, std::move(cpulist),
+                                                            std::move(allocator));
+        return scheduler;
+    }
+
     void LotteryAgent::AgentThread()
     {
         gtid().assign_name("Agent:" + std::to_string(cpu().id()));
