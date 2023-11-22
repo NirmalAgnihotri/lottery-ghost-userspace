@@ -700,6 +700,35 @@ cc_binary(
 )
 
 cc_library(
+    name = "lottery_per_cpu_scheduler",
+    srcs = [
+        "schedulers/lottery/lottery_scheduler.cc",
+        "schedulers/lottery/lottery_scheduler.h",
+    ],
+    hdrs = [
+        "schedulers/lottery/lottery_scheduler.h",
+    ],
+    copts = compiler_flags,
+    deps = [
+        ":agent",
+    ],
+)
+
+cc_binary(
+    name = "lottery_per_cpu_agent",
+    srcs = [
+        "schedulers/lottery/lottery_agent.cc",
+    ],
+    copts = compiler_flags,
+    deps = [
+        ":agent",
+        ":lottery_per_cpu_scheduler",
+        "@com_google_absl//absl/debugging:symbolize",
+        "@com_google_absl//absl/flags:parse",
+    ],
+)
+
+cc_library(
     name = "fifo_per_cpu_scheduler",
     srcs = [
         "schedulers/fifo/per_cpu/fifo_scheduler.cc",
