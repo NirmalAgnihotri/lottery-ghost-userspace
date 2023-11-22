@@ -33,11 +33,6 @@ namespace ghost
         return acc;
     }
 
-    void LotteryScheduler::DumpState(const Cpu &cpu, int flags)
-    {
-        absl::FPrintF(stderr, "");
-    }
-
     LotteryTask *RunCollection::PickWinner(unsigned int winning_ticket)
     {
         absl::MutexLock lock(&mu_);
@@ -49,6 +44,11 @@ namespace ghost
                 return v;
         }
         return nullptr;
+    }
+
+    void LotteryScheduler::DumpState(const Cpu &cpu, int flags)
+    {
+        absl::FPrintF(stderr, "");
     }
 
     LotteryScheduler::LotteryScheduler(Enclave *enclave, CpuList cpulist,
@@ -63,6 +63,22 @@ namespace ghost
             if (!default_channel_)
             {
                 default_channel_ = cs->channel.get();
+            }
+        }
+    }
+
+    void LotteryScheduler::EnclaveReady()
+    {
+        for (const Cpu &cpu : cpus())
+        {
+            CpuState *cs = cpu_state(cpu);
+            Agent *agent = enclave()->GetAgent(cpu);
+
+            // AssociateTask may fail if agent barrier is stale.
+            while (!cs->channel->AssociateTask(agent->gtid(), agent->barrier(),
+                                               /*status=*/nullptr))
+            {
+                CHECK_EQ(errno, ESTALE);
             }
         }
     }
