@@ -21,6 +21,8 @@ namespace ghost
     kQueued,   // on runqueue.
     kOnCpu,    // running on cpu.
   };
+  
+  std::ostream& operator<<(std::ostream& os, const LotteryTaskState& state);
 
   struct LotteryTask : public Task<>
   {

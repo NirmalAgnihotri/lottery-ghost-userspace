@@ -16,7 +16,7 @@ namespace ghost
         CHECK_GE(task->cpu, 0);
         CHECK_EQ(task->run_state, LotteryTaskState::kRunnable);
 
-        task->run_state = FifoTaskState::kQueued;
+        task->run_state = LotteryTaskState::kQueued;
 
         absl::MutexLock lock(&mu_);
         rq_.insert(task);
@@ -37,7 +37,7 @@ namespace ghost
     {
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
-        for (const LotteryTask *&v : rq_)
+        for (LotteryTask *v : rq_)
         {
             acc += v->num_tickets;
             if (acc >= v->num_tickets)
@@ -152,7 +152,7 @@ namespace ghost
             DispatchMessage(msg);
             Consume(cs->channel.get(), msg);
         }
-        LotterySchedule(cpu, agent_barrier, agent_sw.boosted_priority());
+        LotterySchedule(cpu, agent_barrier);
     }
 
     void LotteryScheduler::TaskNew(LotteryTask *task, const Message &msg)
