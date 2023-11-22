@@ -33,6 +33,11 @@ namespace ghost
         return acc;
     }
 
+    void LotteryScheduler::DumpState(const Cpu &cpu, int flags)
+    {
+        absl::FPrintF(stderr, "");
+    }
+
     LotteryTask *RunCollection::PickWinner(unsigned int winning_ticket)
     {
         absl::MutexLock lock(&mu_);

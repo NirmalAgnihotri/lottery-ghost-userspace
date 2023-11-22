@@ -21,8 +21,8 @@ namespace ghost
     kQueued,   // on runqueue.
     kOnCpu,    // running on cpu.
   };
-  
-  std::ostream& operator<<(std::ostream& os, const LotteryTaskState& state);
+
+  std::ostream &operator<<(std::ostream &os, const LotteryTaskState &state);
 
   struct LotteryTask : public Task<>
   {
@@ -92,7 +92,6 @@ namespace ghost
   private:
     mutable absl::Mutex mu_;
     std::unordered_set<LotteryTask *> rq_ ABSL_GUARDED_BY(mu_);
-
   };
 
   class LotteryScheduler : public BasicDispatchScheduler<LotteryTask>
@@ -113,7 +112,7 @@ namespace ghost
       return cs->run_queue.Empty();
     }
 
-    // void DumpState(const Cpu &cpu, int flags) final;
+    void DumpState(const Cpu &cpu, int flags) final;
     std::atomic<bool> debug_runqueue_ = false;
 
     int CountAllTasks()
