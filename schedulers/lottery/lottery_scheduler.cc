@@ -5,6 +5,47 @@
 
 namespace ghost
 {
+    void RunCollection::Remove(LotteryTask *task)
+    {
+        task->run_state = FifoTaskState::kRunnable;
+        absl::MutexLock lock(&mu_);
+        rq_.erase(task);
+    }
+    void RunCollection::Add(LotteryTask *task)
+    {
+        CHECK_GE(task->cpu, 0);
+        CHECK_EQ(task->run_state, FifoTaskState::kRunnable);
+
+        task->run_state = FifoTaskState::kQueued;
+
+        absl::MutexLock lock(&mu_);
+        rq_.insert(task);
+    }
+    unsigned int RunCollection::NumTickets()
+    {
+        absl::MutexLock lock(&mu_);
+        unsigned int acc = 0;
+        for (const LotteryTask *&v : rq_)
+        {
+            acc += v->num_tickets
+        }
+
+        return acc;
+    }
+
+    LotteryTask *RunCollection::PickWinner(unsisgned int winning_ticket)
+    {
+        absl::MutexLock lock(&mu_);
+        unsigned int acc = 0;
+        for (const LotteryTask *&v : rq_)
+        {
+            acc += v->num_tickets;
+            if (acc >= v->num_tickets)
+                return v;
+        }
+        return nullptr;
+    }
+
     LotteryScheduler::LotteryScheduler(Enclave *enclave, CpuList cpulist,
                                        std::shared_ptr<TaskAllocator<LotteryTask>> allocator) : BasicDispatchScheduler(enclave, std::move(cpulist),
                                                                                                                        std::move(allocator))
@@ -39,28 +80,62 @@ namespace ghost
     void LotteryScheduler::LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier)
     {
         CpuState *cs = cpu_state(cpu);
+
         // get the total number of tickets
-        int num_tickets = 0;
-        for (auto task : cs->run_queue)
-        {
-            num_tickets += task->num_tickets;
-        }
+        unsigned int num_tickets = cs->run_queue.NumTickets();
 
         // run the lottery
         std::random_device rd;
         std::mt19937 gen(rd()); // Mersenne Twister engine
-
-        // Define a uniform distribution for integers between 1 and 10
+        // Define a uniform distribution for integers between 1 and num_tickets
         std::uniform_int_distribution<int> distribution(1, num_tickets);
 
-        // Generate a random number between 1 and 10
-        int ticket = distribution(gen);
+        int winning_ticket = distribution(gen);
         int curr_tickets = 0;
 
-        LotteryTask *next;
-        for (int i = 0; i < cs->run_queue.size(); ++i)
+        LotteryTask *next = cs->run_queue.PickWinner();
+
+        cs->run_queue.Erase(next);
+        GHOST_DPRINT(3, stderr, "LotterySchedule %s on %s cpu %d ",
+                     next ? next->gtid.describe() : "idling",
+                     prio_boost ? "prio-boosted" : "", cpu.id());
+        RunRequest *req = enclave()->GetRunRequest(cpu);
+
+        if (next)
         {
-            if (cs->run_queue[i]->num_tickets ==)
+            while (next->status_word.on_cpu())
+            {
+                Pause();
+            }
+
+            req->Open({
+                .target = next->gtid,
+                .target_barrier = next->seqnum,
+                .agent_barrier = agent_barrier,
+                .commit_flags = COMMIT_AT_TXN_COMMIT,
+            });
+
+            if (req->Commit())
+            {
+                // Txn commit succeeded and 'next' is oncpu.
+                TaskOnCpu(next, cpu);
+            }
+            else
+            {
+                GHOST_DPRINT(3, stderr, "FifoSchedule: commit failed (state=%d)",
+                             req->state());
+
+                if (next == cs->current)
+                {
+                    TaskOffCpu(next, /*blocked=*/false, /*from_switchto=*/false);
+                }
+
+                cs->run_queue.Add(next);
+            }
+        }
+        else
+        {
+            req->LocalYield(agent_barrier, flags);
         }
     }
 
@@ -116,7 +191,7 @@ namespace ghost
 
         // Make task visible in the new runqueue *after* changing the association
         // (otherwise the task can get oncpu while producing into the old queue).
-        cs->run_queue.push_back(task);
+        cs->run_queue.Add(task);
 
         // Get the agent's attention so it notices the new task.
         enclave()->GetAgent(cpu)->Ping();
@@ -139,7 +214,7 @@ namespace ghost
         else
         {
             CpuState *cs = cpu_state_of(task);
-            cs->run_queue.push_back(task);
+            cs->run_queue.Add(task);
         }
     }
 
@@ -155,7 +230,7 @@ namespace ghost
         else if (task->queued())
         {
             CpuState *cs = cpu_state_of(task);
-            cs->run_queue.erase(task);
+            cs->run_queue.Erase(task);
             cs->total_tickets -= task->num_tickets;
         }
         else
@@ -184,7 +259,7 @@ namespace ghost
             static_cast<const ghost_msg_payload_task_yield *>(msg.payload());
         TaskOffCpu(task, /*blocked=*/false, payload->from_switchto);
         CpuState *cs = cpu_state_of(task);
-        cs->run_queue.push_back(task);
+        cs->run_queue.Add(task);
         if (payload->from_switchto)
         {
             Cpu cpu = topology()->cpu(payload->cpu);
@@ -212,7 +287,7 @@ namespace ghost
         task->preempted = true;
 
         CpuState *cs = cpu_state_of(task);
-        cs->run_queue.push_back(task);
+        cs->run_queue.Add(task);
 
         if (payload->from_switchto)
         {
@@ -258,6 +333,38 @@ namespace ghost
         task->run_state = LotteryTaskState::kOnCpu;
         task->cpu = cpu.id();
         task->preempted = false;
+    }
+
+    void LotteryAgent::AgentThread()
+    {
+        gtid().assign_name("Agent:" + std::to_string(cpu().id()));
+        if (verbose() > 1)
+        {
+            printf("Agent tid:=%d\n", gtid().tid());
+        }
+        SignalReady();
+        WaitForEnclaveReady();
+
+        PeriodicEdge debug_out(absl::Seconds(1));
+
+        while (!Finished() || !scheduler_->Empty(cpu()))
+        {
+            scheduler_->Schedule(cpu(), status_word());
+
+            if (verbose() && debug_out.Edge())
+            {
+                static const int flags = verbose() > 1 ? Scheduler::kDumpStateEmptyRQ : 0;
+                if (scheduler_->debug_runqueue_)
+                {
+                    scheduler_->debug_runqueue_ = false;
+                    scheduler_->DumpState(cpu(), Scheduler::kDumpAllTasks);
+                }
+                else
+                {
+                    scheduler_->DumpState(cpu(), flags);
+                }
+            }
+        }
     }
 
 }

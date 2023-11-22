@@ -17,27 +17,31 @@
 ABSL_FLAG(std::string, ghost_cpus, "1-5", "cpulist");
 ABSL_FLAG(std::string, enclave, "", "Connect to preexisting enclave directory");
 
-namespace ghost {
+namespace ghost
+{
 
-static void ParseAgentConfig(AgentConfig* config) {
-  CpuList ghost_cpus =
-      MachineTopology()->ParseCpuStr(absl::GetFlag(FLAGS_ghost_cpus));
-  CHECK(!ghost_cpus.Empty());
+  static void ParseAgentConfig(AgentConfig *config)
+  {
+    CpuList ghost_cpus =
+        MachineTopology()->ParseCpuStr(absl::GetFlag(FLAGS_ghost_cpus));
+    CHECK(!ghost_cpus.Empty());
 
-  Topology* topology = MachineTopology();
-  config->topology_ = topology;
-  config->cpus_ = ghost_cpus;
-  std::string enclave = absl::GetFlag(FLAGS_enclave);
-  if (!enclave.empty()) {
-    int fd = open(enclave.c_str(), O_PATH);
-    CHECK_GE(fd, 0);
-    config->enclave_fd_ = fd;
+    Topology *topology = MachineTopology();
+    config->topology_ = topology;
+    config->cpus_ = ghost_cpus;
+    std::string enclave = absl::GetFlag(FLAGS_enclave);
+    if (!enclave.empty())
+    {
+      int fd = open(enclave.c_str(), O_PATH);
+      CHECK_GE(fd, 0);
+      config->enclave_fd_ = fd;
+    }
   }
-}
 
-}  // namespace ghost
+} // namespace ghost
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
   absl::InitializeSymbolizer(argv[0]);
   absl::ParseCommandLine(argc, argv);
 
@@ -47,7 +51,7 @@ int main(int argc, char* argv[]) {
   printf("Initializing...\n");
 
   // Using new so we can destruct the object before printing Done
-  auto uap = new ghost::AgentProcess<ghost::FullFifoAgent<ghost::LocalEnclave>,
+  auto uap = new ghost::AgentProcess<ghost::FullLotteryAgent<ghost::LocalEnclave>,
                                      ghost::AgentConfig>(config);
 
   ghost::GhostHelper()->InitCore();
@@ -60,7 +64,8 @@ int main(int argc, char* argv[]) {
   fflush(stdout);
 
   ghost::Notification exit;
-  ghost::GhostSignals::AddHandler(SIGINT, [&exit](int) {
+  ghost::GhostSignals::AddHandler(SIGINT, [&exit](int)
+                                  {
     static bool first = true;  // We only modify the first SIGINT.
 
     if (first) {
@@ -68,14 +73,13 @@ int main(int argc, char* argv[]) {
       first = false;
       return false;  // We'll exit on subsequent SIGTERMs.
     }
-    return true;
-  });
+    return true; });
 
   // TODO: this is racy - uap could be deleted already
-  ghost::GhostSignals::AddHandler(SIGUSR1, [uap](int) {
-    uap->Rpc(ghost::FifoScheduler::kDebugRunqueue);
-    return false;
-  });
+  ghost::GhostSignals::AddHandler(SIGUSR1, [uap](int)
+                                  {
+    uap->Rpc(ghost::LotteryScheduler::kDebugRunqueue);
+    return false; });
 
   exit.WaitForNotification();
 
