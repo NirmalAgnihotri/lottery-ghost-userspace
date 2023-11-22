@@ -5,16 +5,16 @@
 
 namespace ghost
 {
-    void RunCollection::Remove(LotteryTask *task)
+    void RunCollection::Erase(LotteryTask *task)
     {
-        task->run_state = FifoTaskState::kRunnable;
+        task->run_state = LotteryTaskState::kRunnable;
         absl::MutexLock lock(&mu_);
         rq_.erase(task);
     }
     void RunCollection::Add(LotteryTask *task)
     {
         CHECK_GE(task->cpu, 0);
-        CHECK_EQ(task->run_state, FifoTaskState::kRunnable);
+        CHECK_EQ(task->run_state, LotteryTaskState::kRunnable);
 
         task->run_state = FifoTaskState::kQueued;
 
@@ -25,15 +25,15 @@ namespace ghost
     {
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
-        for (const LotteryTask *&v : rq_)
+        for (const LotteryTask *v : rq_)
         {
-            acc += v->num_tickets
+            acc += v->num_tickets;
         }
 
         return acc;
     }
 
-    LotteryTask *RunCollection::PickWinner(unsisgned int winning_ticket)
+    LotteryTask *RunCollection::PickWinner(unsigned int winning_ticket)
     {
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
@@ -91,14 +91,13 @@ namespace ghost
         std::uniform_int_distribution<int> distribution(1, num_tickets);
 
         int winning_ticket = distribution(gen);
-        int curr_tickets = 0;
 
-        LotteryTask *next = cs->run_queue.PickWinner();
+        LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
 
         cs->run_queue.Erase(next);
-        GHOST_DPRINT(3, stderr, "LotterySchedule %s on %s cpu %d ",
+        GHOST_DPRINT(3, stderr, "LotterySchedule %s on cpu %d ",
                      next ? next->gtid.describe() : "idling",
-                     prio_boost ? "prio-boosted" : "", cpu.id());
+                     cpu.id());
         RunRequest *req = enclave()->GetRunRequest(cpu);
 
         if (next)
@@ -135,11 +134,11 @@ namespace ghost
         }
         else
         {
-            req->LocalYield(agent_barrier, flags);
+            req->LocalYield(agent_barrier, 0);
         }
     }
 
-    void LotteryScheduler::Schedule(const Cpu &cpu, const StatusWord &sw)
+    void LotteryScheduler::Schedule(const Cpu &cpu, const StatusWord &agent_sw)
     {
         BarrierToken agent_barrier = agent_sw.barrier();
         CpuState *cs = cpu_state(cpu);
@@ -178,7 +177,7 @@ namespace ghost
     }
     void LotteryScheduler::Migrate(LotteryTask *task, Cpu cpu, BarrierToken seqnum)
     {
-        CHECK_EQ(task->run_state, FifoTaskState::kRunnable);
+        CHECK_EQ(task->run_state, LotteryTaskState::kRunnable);
         CHECK_EQ(task->cpu, -1);
 
         CpuState *cs = cpu_state(cpu);

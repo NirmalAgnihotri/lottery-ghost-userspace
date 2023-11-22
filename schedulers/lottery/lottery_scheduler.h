@@ -63,7 +63,7 @@ namespace ghost
     RunCollection(const RunCollection &) = delete;
     RunCollection &operator=(RunCollection &) = delete;
 
-    void Remove(LotteryTask *task);
+    void Erase(LotteryTask *task);
     void Add(LotteryTask *task);
 
     unsigned int NumTickets();
@@ -89,9 +89,9 @@ namespace ghost
 
   private:
     mutable absl::Mutex mu_;
-    std::unordered_set<FifoTask *> rq_ ABSL_GUARDED_BY(mu_);
+    std::unordered_set<LotteryTask *> rq_ ABSL_GUARDED_BY(mu_);
 
-  }
+  };
 
   class LotteryScheduler : public BasicDispatchScheduler<LotteryTask>
   {
@@ -100,7 +100,7 @@ namespace ghost
                               std::shared_ptr<TaskAllocator<LotteryTask>> allocator);
     ~LotteryScheduler() final {}
 
-    void Schedule(const Cpu &cpu, const StatusWord &sw);
+    void Schedule(const Cpu &cpu, const StatusWord &agent_sw);
 
     void EnclaveReady() final;
     Channel &GetDefaultChannel() final { return *default_channel_; };
@@ -108,7 +108,7 @@ namespace ghost
     bool Empty(const Cpu &cpu)
     {
       CpuState *cs = cpu_state(cpu);
-      return cs->run_queue.empty();
+      return cs->run_queue.Empty();
     }
 
     // void DumpState(const Cpu &cpu, int flags) final;
@@ -139,8 +139,8 @@ namespace ghost
 
   private:
     void LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier);
-    void TaskOffCpu(FifoTask *task, bool blocked, bool from_switchto);
-    void TaskOnCpu(FifoTask *task, Cpu cpu);
+    void TaskOffCpu(LotteryTask *task, bool blocked, bool from_switchto);
+    void TaskOnCpu(LotteryTask *task, Cpu cpu);
     void Migrate(LotteryTask *task, Cpu cpu, BarrierToken seqnum);
     Cpu AssignCpu(LotteryTask *task);
 
