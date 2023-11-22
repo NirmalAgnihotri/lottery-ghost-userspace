@@ -365,5 +365,19 @@ namespace ghost
             }
         }
     }
+    std::ostream &operator<<(std::ostream &os, const LotteryTaskState &state)
+    {
+        switch (state)
+        {
+        case LotteryTaskState::kBlocked:
+            return os << "kBlocked";
+        case LotteryTaskState::kRunnable:
+            return os << "kRunnable";
+        case LotteryTaskState::kQueued:
+            return os << "kQueued";
+        case LotteryTaskState::kOnCpu:
+            return os << "kOnCpu";
+        }
+    }
 
 }
