@@ -46,9 +46,34 @@ namespace ghost
         return nullptr;
     }
 
+    void FifoScheduler::DumpAllTasks()
+    {
+        fprintf(stderr, "task        state   cpu\n");
+        allocator()->ForEachTask([](Gtid gtid, const LotteryTask *task)
+                                 {
+    absl::FPrintF(stderr, "%-12s%-8d%-8d%c%c\n", gtid.describe(),
+                  task->run_state, task->cpu, task->preempted ? 'P' : '-');
+    return true; });
+    }
+
     void LotteryScheduler::DumpState(const Cpu &cpu, int flags)
     {
-        absl::FPrintF(stderr, "");
+        if (flags & Scheduler::kDumpAllTasks)
+        {
+            DumpAllTasks();
+        }
+        CpuState *cs = cpu_state(cpu);
+
+        if (!(flags & Scheduler::kDumpStateEmptyRQ) && !cs->current &&
+            cs->run_queue.Empty())
+        {
+            return;
+        }
+
+        const LotteryTask *current = cs->current;
+        const RunCollection *rq = &cs->run_queue;
+        absl::FPrintF(stderr, "SchedState[%d]: %s rq_l=%lu\n", cpu.id(),
+                      current ? current->gtid.describe() : "none", rq->Size());
     }
 
     LotteryScheduler::LotteryScheduler(Enclave *enclave, CpuList cpulist,

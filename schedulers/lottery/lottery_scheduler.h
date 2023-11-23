@@ -144,6 +144,7 @@ namespace ghost
     void TaskOnCpu(LotteryTask *task, Cpu cpu);
     void Migrate(LotteryTask *task, Cpu cpu, BarrierToken seqnum);
     Cpu AssignCpu(LotteryTask *task);
+    void DumpAllTasks();
 
     struct CpuState
     {
