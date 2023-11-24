@@ -161,7 +161,7 @@ namespace ghost
             // // Define a uniform distribution for integers between 1 and num_tickets
             // std::uniform_int_distribution<int> distribution(1, num_tickets);
             int winning_ticket = num_tickets > 0 ? 1 + (ParkMillerRand() % num_tickets) : 1;
-            LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
+            next = cs->run_queue.PickWinner(winning_ticket);
             std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
         }
 
@@ -208,7 +208,7 @@ namespace ghost
             int flags = 0;
             if (prio_boost && (cs->current || !cs->run_queue.Empty()))
             {
-                flags = RTLA_ON_IDLE
+                flags = RTLA_ON_IDLE;
             }
             req->LocalYield(agent_barrier, flags);
         }
