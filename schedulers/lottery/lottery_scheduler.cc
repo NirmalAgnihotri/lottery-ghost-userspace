@@ -11,7 +11,6 @@ namespace ghost
             return;
         task->run_state = LotteryTaskState::kRunnable;
         absl::MutexLock lock(&mu_);
-	std::cout << "Erasing" << std::endl;
         rq_.erase(task);
     }
     void RunCollection::Add(LotteryTask *task)
@@ -40,13 +39,23 @@ namespace ghost
     {
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
-        for (LotteryTask *v : rq_)
-        {
-            acc += v->num_tickets;
-            if (acc >= v->num_tickets)
-                return v;
-        }
-        return nullptr;
+        if (rq_.empty())
+            return nullptr;
+        std::cout << "PICKING" << std::endl;
+        LotteryTask res = rq_[0];
+        rq_.erase(res);
+        return res;
+        // for (LotteryTask *v : rq_)
+        // {
+        //     acc += v->num_tickets;
+        //     if (acc >= v->num_tickets)
+        //     {
+        //         std::cout << "PICKED" << std::endl;
+        //         rq_.erase(task);
+        //         return v;
+        //     }
+        // }
+        // return nullptr;
     }
 
     void LotteryScheduler::DumpAllTasks()
@@ -154,9 +163,9 @@ namespace ghost
         // std::uniform_int_distribution<int> distribution(1, num_tickets);
         int winning_ticket = num_tickets > 0 ? 1 + (ParkMillerRand() % num_tickets) : 1;
         LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
-	std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
+        std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
 
-        cs->run_queue.Erase(next);
+        // cs->run_queue.Erase(next);
         GHOST_DPRINT(3, stderr, "LotterySchedule %s on cpu %d ",
                      next ? next->gtid.describe() : "idling",
                      cpu.id());
