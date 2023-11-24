@@ -38,7 +38,8 @@ void SimpleExp() {
 }
 
 void SimpleExpMany(int num_threads) {
-  std::vector<std::unique_ptr<GhostThread>> threads;
+num_threads = 2;
+   std::vector<std::unique_ptr<GhostThread>> threads;
 
   threads.reserve(num_threads);
   for (int i = 0; i < num_threads; i++) {

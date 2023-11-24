@@ -11,6 +11,7 @@ namespace ghost
             return;
         task->run_state = LotteryTaskState::kRunnable;
         absl::MutexLock lock(&mu_);
+	std::cout << "Erasing" << std::endl;
         rq_.erase(task);
     }
     void RunCollection::Add(LotteryTask *task)
@@ -151,8 +152,9 @@ namespace ghost
         // std::mt19937 gen(rd()); // Mersenne Twister engine
         // // Define a uniform distribution for integers between 1 and num_tickets
         // std::uniform_int_distribution<int> distribution(1, num_tickets);
-        int winning_ticket = 1 + (ParkMillerRand() % num_tickets);
+        int winning_ticket = num_tickets > 0 ? 1 + (ParkMillerRand() % num_tickets) : 1;
         LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
+	std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
 
         cs->run_queue.Erase(next);
         GHOST_DPRINT(3, stderr, "LotterySchedule %s on cpu %d ",
