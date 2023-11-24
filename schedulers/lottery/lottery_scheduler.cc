@@ -39,23 +39,19 @@ namespace ghost
     {
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
-        if (rq_.empty())
-            return nullptr;
-        std::cout << "PICKING" << std::endl;
-        LotteryTask res = rq_[0];
-        rq_.erase(res);
-        return res;
-        // for (LotteryTask *v : rq_)
-        // {
-        //     acc += v->num_tickets;
-        //     if (acc >= v->num_tickets)
-        //     {
-        //         std::cout << "PICKED" << std::endl;
-        //         rq_.erase(task);
-        //         return v;
-        //     }
-        // }
-        // return nullptr;
+        /*if (rq_.empty())
+		return nullptr;*/
+        for (LotteryTask *v : rq_)
+        {
+             acc += v->num_tickets;
+             if (acc >= v->num_tickets)
+             {
+		 //v->run_state = LotteryTaskState::kRunnable;
+                 //rq_.erase(v);
+                 return v;
+             }
+         }
+        return nullptr;
     }
 
     void LotteryScheduler::DumpAllTasks()
@@ -165,7 +161,7 @@ namespace ghost
         LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
         std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
 
-        // cs->run_queue.Erase(next);
+        cs->run_queue.Erase(next);
         GHOST_DPRINT(3, stderr, "LotterySchedule %s on cpu %d ",
                      next ? next->gtid.describe() : "idling",
                      cpu.id());
