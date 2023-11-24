@@ -46,8 +46,8 @@ namespace ghost
              acc += v->num_tickets;
              if (acc >= v->num_tickets)
              {
-		 //v->run_state = LotteryTaskState::kRunnable;
-                 //rq_.erase(v);
+		 v->run_state = LotteryTaskState::kRunnable;
+                 rq_.erase(v);
                  return v;
              }
          }
@@ -161,7 +161,7 @@ namespace ghost
         LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
         std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
 
-        cs->run_queue.Erase(next);
+        //cs->run_queue.Erase(next);
         GHOST_DPRINT(3, stderr, "LotterySchedule %s on cpu %d ",
                      next ? next->gtid.describe() : "idling",
                      cpu.id());
@@ -201,7 +201,7 @@ namespace ghost
         }
         else
         {
-            req->LocalYield(agent_barrier, 0);
+            req->LocalYield(agent_barrier, RTLA_ON_IDLE);
         }
     }
 
@@ -351,7 +351,7 @@ namespace ghost
             static_cast<const ghost_msg_payload_task_preempt *>(msg.payload());
         TaskOffCpu(task, /*blocked=*/false, payload->from_switchto);
         task->preempted = true;
-
+	task->num_tickets += 1000;
         CpuState *cs = cpu_state_of(task);
         cs->run_queue.Add(task);
 
@@ -399,6 +399,7 @@ namespace ghost
         task->run_state = LotteryTaskState::kOnCpu;
         task->cpu = cpu.id();
         task->preempted = false;
+	task->num_tickets = 10;
     }
 
     std::unique_ptr<LotteryScheduler> MultiThreadedLotteryScheduler(Enclave *enclave,
