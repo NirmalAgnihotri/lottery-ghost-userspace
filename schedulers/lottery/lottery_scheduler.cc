@@ -40,17 +40,17 @@ namespace ghost
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
         /*if (rq_.empty())
-		return nullptr;*/
+        return nullptr;*/
         for (LotteryTask *v : rq_)
         {
-             acc += v->num_tickets;
-             if (acc >= v->num_tickets)
-             {
-		 v->run_state = LotteryTaskState::kRunnable;
-                 rq_.erase(v);
-                 return v;
-             }
-         }
+            acc += v->num_tickets;
+            if (acc >= v->num_tickets)
+            {
+                v->run_state = LotteryTaskState::kRunnable;
+                rq_.erase(v);
+                return v;
+            }
+        }
         return nullptr;
     }
 
@@ -147,24 +147,28 @@ namespace ghost
         return (seed = lo);
     }
 
-    void LotteryScheduler::LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier)
+    void LotteryScheduler::LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier, bool prio_boost)
     {
         CpuState *cs = cpu_state(cpu);
-        // get the total number of tickets
-        unsigned int num_tickets = cs->run_queue.NumTickets();
-        // run the lottery
-        // std::random_device rd;
-        // std::mt19937 gen(rd()); // Mersenne Twister engine
-        // // Define a uniform distribution for integers between 1 and num_tickets
-        // std::uniform_int_distribution<int> distribution(1, num_tickets);
-        int winning_ticket = num_tickets > 0 ? 1 + (ParkMillerRand() % num_tickets) : 1;
-        LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
-        std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
+        LotteryTask *next = nullptr;
+        if (!prio_boost)
+        {
+            // get the total number of tickets
+            unsigned int num_tickets = cs->run_queue.NumTickets();
+            // run the lottery
+            // std::random_device rd;
+            // std::mt19937 gen(rd()); // Mersenne Twister engine
+            // // Define a uniform distribution for integers between 1 and num_tickets
+            // std::uniform_int_distribution<int> distribution(1, num_tickets);
+            int winning_ticket = num_tickets > 0 ? 1 + (ParkMillerRand() % num_tickets) : 1;
+            LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
+            std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
+        }
 
-        //cs->run_queue.Erase(next);
-        GHOST_DPRINT(3, stderr, "LotterySchedule %s on cpu %d ",
+        // cs->run_queue.Erase(next);
+        GHOST_DPRINT(3, stderr, "LotterySchedule %s on %s cpu %d ",
                      next ? next->gtid.describe() : "idling",
-                     cpu.id());
+                     prio_boost ? "prio-boosted" : "", cpu.id());
         RunRequest *req = enclave()->GetRunRequest(cpu);
 
         if (next)
@@ -201,7 +205,12 @@ namespace ghost
         }
         else
         {
-            req->LocalYield(agent_barrier, RTLA_ON_IDLE);
+            int flags = 0;
+            if (prio_boost && (cs->current || !cs->run_queue.Empty()))
+            {
+                flags = RTLA_ON_IDLE
+            }
+            req->LocalYield(agent_barrier, flags);
         }
     }
 
@@ -219,7 +228,7 @@ namespace ghost
             DispatchMessage(msg);
             Consume(cs->channel.get(), msg);
         }
-        LotterySchedule(cpu, agent_barrier);
+        LotterySchedule(cpu, agent_barrier, agent_sw.boosted_priority());
     }
 
     void LotteryScheduler::TaskNew(LotteryTask *task, const Message &msg)
@@ -351,7 +360,7 @@ namespace ghost
             static_cast<const ghost_msg_payload_task_preempt *>(msg.payload());
         TaskOffCpu(task, /*blocked=*/false, payload->from_switchto);
         task->preempted = true;
-	task->num_tickets += 1000;
+        task->num_tickets += 1000;
         CpuState *cs = cpu_state_of(task);
         cs->run_queue.Add(task);
 
@@ -399,7 +408,7 @@ namespace ghost
         task->run_state = LotteryTaskState::kOnCpu;
         task->cpu = cpu.id();
         task->preempted = false;
-	task->num_tickets = 10;
+        task->num_tickets = 10;
     }
 
     std::unique_ptr<LotteryScheduler> MultiThreadedLotteryScheduler(Enclave *enclave,

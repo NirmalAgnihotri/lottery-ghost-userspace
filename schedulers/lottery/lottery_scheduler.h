@@ -139,7 +139,7 @@ namespace ghost
     void TaskSwitchto(LotteryTask *task, const Message &msg) final;
 
   private:
-    void LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier);
+    void LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier, bool prio_boost);
     void TaskOffCpu(LotteryTask *task, bool blocked, bool from_switchto);
     void TaskOnCpu(LotteryTask *task, Cpu cpu);
     void Migrate(LotteryTask *task, Cpu cpu, BarrierToken seqnum);
