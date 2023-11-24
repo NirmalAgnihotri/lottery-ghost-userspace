@@ -7,8 +7,8 @@ namespace ghost
 {
     void RunCollection::Erase(LotteryTask *task)
     {
-	std::cout << "IN ERASE " << std::endl;
-	if (task == nullptr) return;
+        if (task == nullptr)
+            return;
         task->run_state = LotteryTaskState::kRunnable;
         absl::MutexLock lock(&mu_);
         rq_.erase(task);
@@ -125,25 +125,35 @@ namespace ghost
         return next++;
     }
 
+    long unsigned int LotteryScheduler::ParkMillerRand()
+    {
+        static long unsigned int seed = 1;
+        long unsigned int hi, lo;
+        lo = 16807 * (seed & 0xFFFF);
+        hi = 16807 * (seed >> 16);
+
+        lo += (hi & 0x7FFF) << 16;
+        lo += hi >> 15;
+
+        if (lo > 0x7FFFFFFF)
+            lo -= 0x7FFFFFFF;
+
+        return (seed = lo);
+    }
+
     void LotteryScheduler::LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier)
     {
         CpuState *cs = cpu_state(cpu);
-	std::cout << "GETTING TOTAL" <<std::endl;
         // get the total number of tickets
         unsigned int num_tickets = cs->run_queue.NumTickets();
-	std::cout << "RANDOM" << std::endl;
         // run the lottery
-        std::random_device rd;
-        std::mt19937 gen(rd()); // Mersenne Twister engine
-        // Define a uniform distribution for integers between 1 and num_tickets
-        std::uniform_int_distribution<int> distribution(1, num_tickets);
-
-	std::cout << "PICKED WINNING " <<std::endl;
-        int winning_ticket = 1;
-	std::cout<<"WINNING IS " << winning_ticket << std::endl;
+        // std::random_device rd;
+        // std::mt19937 gen(rd()); // Mersenne Twister engine
+        // // Define a uniform distribution for integers between 1 and num_tickets
+        // std::uniform_int_distribution<int> distribution(1, num_tickets);
+        int winning_ticket = 1 + (ParkMillerRand() % num_tickets);
         LotteryTask *next = cs->run_queue.PickWinner(winning_ticket);
 
-	std::cout << "GOING TO ERASE" <<std::endl;
         cs->run_queue.Erase(next);
         GHOST_DPRINT(3, stderr, "LotterySchedule %s on cpu %d ",
                      next ? next->gtid.describe() : "idling",

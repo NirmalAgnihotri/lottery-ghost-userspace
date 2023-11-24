@@ -145,6 +145,7 @@ namespace ghost
     void Migrate(LotteryTask *task, Cpu cpu, BarrierToken seqnum);
     Cpu AssignCpu(LotteryTask *task);
     void DumpAllTasks();
+    long unsigned int ParkMillerRand();
 
     struct CpuState
     {
