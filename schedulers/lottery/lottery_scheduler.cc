@@ -1,7 +1,11 @@
 #include "schedulers/lottery/lottery_scheduler.h"
 #include <memory>
-#include <iostream>
 #include <random>
+
+// debugging + timiing
+#include <iostream>
+#include <chrono>
+#include <vector>
 
 namespace ghost
 {
@@ -27,10 +31,29 @@ namespace ghost
     {
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
-        for (const LotteryTask *v : rq_)
+        std::vector<LotteryTask*> t;
+        
+
+        // debugging
+        int c_tickets = -1;
+
+        for (LotteryTask *v : rq_)
         {
+            // debugging
+            t.push_back(v);
             acc += v->num_tickets;
+
+            std::cout << v << " (Tickets): " << v -> num_tickets << std:: endl;
         }
+
+        std::sort(t.begin(), t.end());
+        
+        if (t.size() >= 2) {
+            t[0] -> num_tickets = t[1] -> num_tickets * 2;
+            acc = t[1] -> num_tickets * 3;
+        }
+
+
 
         return acc;
     }
@@ -39,12 +62,10 @@ namespace ghost
     {
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
-        /*if (rq_.empty())
-        return nullptr;*/
         for (LotteryTask *v : rq_)
         {
             acc += v->num_tickets;
-            if (acc >= v->num_tickets)
+            if (acc >= winning_ticket)
             {
                 v->run_state = LotteryTaskState::kRunnable;
                 rq_.erase(v);
@@ -114,6 +135,13 @@ namespace ghost
                 CHECK_EQ(errno, ESTALE);
             }
         }
+
+        // Enable tick msg delivery here instead of setting AgentConfig.tick_config_
+        // because the agent subscribing the default channel (mostly the
+        // channel/agent for the front CPU in the enclave) can get CpuTick messages
+        // for another CPU in the enclave while this function is trying to associate
+        // each agent to its corresponding channel.
+        enclave()->SetDeliverTicks(true);
     }
 
     // Implicitly thread-safe because it is only called from one agent associated
@@ -150,20 +178,38 @@ namespace ghost
     void LotteryScheduler::LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier, bool prio_boost)
     {
         CpuState *cs = cpu_state(cpu);
+        cs -> count += 1;
         LotteryTask *next = nullptr;
         if (!prio_boost)
         {
+            auto start = std::chrono::high_resolution_clock::now();
             // get the total number of tickets
             unsigned int num_tickets = cs->run_queue.NumTickets();
             // run the lottery
-            // std::random_device rd;
-            // std::mt19937 gen(rd()); // Mersenne Twister engine
-            // // Define a uniform distribution for integers between 1 and num_tickets
-            // std::uniform_int_distribution<int> distribution(1, num_tickets);
             int winning_ticket = num_tickets > 0 ? 1 + (ParkMillerRand() % num_tickets) : 1;
+            std:: cout << "Winning: " << winning_ticket << std::endl;
+            if (cs -> current != nullptr) cs -> run_queue.Add(cs -> current);
             next = cs->run_queue.PickWinner(winning_ticket);
-            std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
+
+            std::cout << next << " has won lottery" << std:: endl;
+            cs -> mp[next] += 1;
+
+            auto end = std::chrono::high_resolution_clock::now();
+
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+            for (auto [k, v ]: cs -> mp) {
+                std:: cout << k << " (Map): " << v << std::endl; 
+            }
+
+            // std::cout << "Time taken by function: " << duration.count() << " microseconds" << std::endl;
+            // std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
+        }else {
+            std:: cout << "pri0----" << std:: endl;
         }
+
+        std::cout << cs -> count << std::endl;
+        
 
         // cs->run_queue.Erase(next);
         GHOST_DPRINT(3, stderr, "LotterySchedule %s on %s cpu %d ",
@@ -192,7 +238,7 @@ namespace ghost
             }
             else
             {
-                GHOST_DPRINT(3, stderr, "FifoSchedule: commit failed (state=%d)",
+                GHOST_DPRINT(3, stderr, "LotterySchedule: commit failed (state=%d)",
                              req->state());
 
                 if (next == cs->current)
@@ -228,7 +274,12 @@ namespace ghost
             DispatchMessage(msg);
             Consume(cs->channel.get(), msg);
         }
+
+        
+        
         LotterySchedule(cpu, agent_barrier, agent_sw.boosted_priority());
+
+
     }
 
     void LotteryScheduler::TaskNew(LotteryTask *task, const Message &msg)
@@ -360,7 +411,7 @@ namespace ghost
             static_cast<const ghost_msg_payload_task_preempt *>(msg.payload());
         TaskOffCpu(task, /*blocked=*/false, payload->from_switchto);
         task->preempted = true;
-        task->num_tickets += 1000;
+        // task->num_tickets += 1000;
         CpuState *cs = cpu_state_of(task);
         cs->run_queue.Add(task);
 
@@ -408,7 +459,7 @@ namespace ghost
         task->run_state = LotteryTaskState::kOnCpu;
         task->cpu = cpu.id();
         task->preempted = false;
-        task->num_tickets = 10;
+        // task->num_tickets = 10;
     }
 
     std::unique_ptr<LotteryScheduler> MultiThreadedLotteryScheduler(Enclave *enclave,

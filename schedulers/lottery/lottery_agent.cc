@@ -29,6 +29,7 @@ namespace ghost
     Topology *topology = MachineTopology();
     config->topology_ = topology;
     config->cpus_ = ghost_cpus;
+    config->tick_config_ = CpuTickConfig::kAllTicks;
     std::string enclave = absl::GetFlag(FLAGS_enclave);
     if (!enclave.empty())
     {

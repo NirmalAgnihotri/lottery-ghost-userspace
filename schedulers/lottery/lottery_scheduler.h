@@ -3,6 +3,8 @@
 #define GHOST_SCHEDULERS_LOTTERY_LOTTERY_SCHEDULER_H
 
 #include <unordered_set>
+#include <set>
+#include <map>
 #include <memory>
 
 #include "lib/agent.h"
@@ -72,8 +74,8 @@ namespace ghost
 
     LotteryTask *PickWinner(unsigned int winning_ticket);
 
-    std::unordered_set<int>::iterator Begin();
-    std::unordered_set<int>::iterator End();
+    std::set<int>::iterator Begin();
+    std::set<int>::iterator End();
 
     // Erase 'task' from the runqueue.
     //
@@ -91,7 +93,7 @@ namespace ghost
 
   private:
     mutable absl::Mutex mu_;
-    std::unordered_set<LotteryTask *> rq_ ABSL_GUARDED_BY(mu_);
+    std::set<LotteryTask *> rq_ ABSL_GUARDED_BY(mu_);
   };
 
   class LotteryScheduler : public BasicDispatchScheduler<LotteryTask>
@@ -137,6 +139,7 @@ namespace ghost
     void TaskBlocked(LotteryTask *task, const Message &msg) final;
     void TaskPreempted(LotteryTask *task, const Message &msg) final;
     void TaskSwitchto(LotteryTask *task, const Message &msg) final;
+    // void CpuTick(const Message &msg) final;
 
   private:
     void LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier, bool prio_boost);
@@ -152,6 +155,8 @@ namespace ghost
       LotteryTask *current = nullptr;
       std::unique_ptr<Channel> channel = nullptr;
       RunCollection run_queue;
+      std::map<LotteryTask *, unsigned int> mp;
+      unsigned int count = 0;
       int total_tickets = 0;
     } ABSL_CACHELINE_ALIGNED;
 

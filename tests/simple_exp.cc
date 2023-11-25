@@ -44,8 +44,13 @@ std::vector<std::unique_ptr<GhostThread>> threads;
   for (int i = 0; i < num_threads; i++) {
     threads.emplace_back(
         new GhostThread(GhostThread::KernelScheduler::kGhost, [] {
-          absl::SleepFor(absl::Milliseconds(10));
+          unsigned long long g = 0;
 
+          for (int i = 0; i < 10000000000; i+=27) {
+            g += i * (i-1) * (i+1);
+            // absl::SleepFor(absl::Milliseconds(1));
+          } 
+          
           // Verify that a ghost thread implicitly clones itself in the ghost
           // scheduling class.
           std::thread t(
@@ -146,35 +151,35 @@ void TaskDepartedManyRace(int num_threads) {
 }  // namespace ghost
 
 int main() {
-  {
-    printf("SimpleExp\n");
-    ghost::ScopedTime time;
-    ghost::SimpleExp();
-  }
+  // {
+  //   printf("SimpleExp\n");
+  //   ghost::ScopedTime time;
+  //   ghost::SimpleExp();
+  // }
   {
     printf("SimpleExpMany\n");
     ghost::ScopedTime time;
-    ghost::SimpleExpMany(1000);
+    ghost::SimpleExpMany(2);
   }
-  {
-    printf("BusyExp\n");
-    ghost::ScopedTime time;
-    ghost::BusyExpRunFor(100, absl::Milliseconds(10));
-  }
-  {
-    printf("TaskDeparted\n");
-    ghost::ScopedTime time;
-    ghost::TaskDeparted();
-  }
-  {
-    printf("TaskDepartedMany\n");
-    ghost::ScopedTime time;
-    ghost::TaskDepartedMany(1000);
-  }
-  {
-    printf("TaskDepartedManyRace\n");
-    ghost::ScopedTime time;
-    ghost::TaskDepartedManyRace(1000);
-  }
+  // {
+  //   printf("BusyExp\n");
+  //   ghost::ScopedTime time;
+  //   ghost::BusyExpRunFor(100, absl::Milliseconds(10));
+  // }
+  // {
+  //   printf("TaskDeparted\n");
+  //   ghost::ScopedTime time;
+  //   ghost::TaskDeparted();
+  // }
+  // {
+  //   printf("TaskDepartedMany\n");
+  //   ghost::ScopedTime time;
+  //   ghost::TaskDepartedMany(1000);
+  // }
+  // {
+  //   printf("TaskDepartedManyRace\n");
+  //   ghost::ScopedTime time;
+  //   ghost::TaskDepartedManyRace(1000);
+  // }
   return 0;
 }
