@@ -7,8 +7,11 @@
 #include <map>
 #include <memory>
 
+#include "absl/functional/bind_front.h"
 #include "lib/agent.h"
 #include "lib/scheduler.h"
+#include "shared/prio_table.h"
+#include "schedulers/lottery/lottery_orchestrator.h"
 
 namespace ghost
 {
@@ -58,6 +61,7 @@ namespace ghost
     // that prevent other tasks from making progress.
     // TODO - will likely be ticket boost in lottery
     //   bool prio_boost = false;
+    const struct SchedParams *sp = nullptr;
   };
 
   class RunCollection
@@ -106,6 +110,11 @@ namespace ghost
     void Schedule(const Cpu &cpu, const StatusWord &agent_sw);
 
     void EnclaveReady() final;
+    void DiscoveryStart() final;
+    void DiscoveryComplete() final;
+
+    void UpdateSchedParams();
+
     Channel &GetDefaultChannel() final { return *default_channel_; };
 
     bool Empty(const Cpu &cpu)
@@ -140,7 +149,6 @@ namespace ghost
     void TaskPreempted(LotteryTask *task, const Message &msg) final;
     void TaskSwitchto(LotteryTask *task, const Message &msg) final;
     // void CpuTick(const Message &msg) final;
-
   private:
     void LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier, bool prio_boost);
     void TaskOffCpu(LotteryTask *task, bool blocked, bool from_switchto);
@@ -149,6 +157,9 @@ namespace ghost
     Cpu AssignCpu(LotteryTask *task);
     void DumpAllTasks();
     long unsigned int ParkMillerRand();
+    void SchedParamsCallback(Orchestrator &orch, const SchedParams *sp,
+                             Gtid oldgtid);
+    void HandleNewGtid(LotteryTask *task, pid_t tgid);
 
     struct CpuState
     {
@@ -168,6 +179,12 @@ namespace ghost
       CHECK_LT(task->cpu, MAX_CPUS);
       return &cpu_states_[task->cpu];
     }
+    bool in_discovery_ = false;
+
+    absl::flat_hash_map<pid_t, std::unique_ptr<Orchestrator>> orchs_;
+
+    const Orchestrator::SchedCallbackFunc kSchedCallbackFunc =
+        absl::bind_front(&LotteryScheduler::SchedParamsCallback, this);
 
     CpuState cpu_states_[MAX_CPUS];
     Channel *default_channel_ = nullptr;

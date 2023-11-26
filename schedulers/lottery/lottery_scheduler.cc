@@ -31,8 +31,7 @@ namespace ghost
     {
         absl::MutexLock lock(&mu_);
         unsigned int acc = 0;
-        std::vector<LotteryTask*> t;
-        
+        std::vector<LotteryTask *> t;
 
         // debugging
         int c_tickets = -1;
@@ -43,17 +42,16 @@ namespace ghost
             t.push_back(v);
             acc += v->num_tickets;
 
-            std::cout << v << " (Tickets): " << v -> num_tickets << std:: endl;
+            std::cout << v << " (Tickets): " << v->num_tickets << std::endl;
         }
 
-        std::sort(t.begin(), t.end());
-        
-        if (t.size() >= 2) {
-            t[0] -> num_tickets = t[1] -> num_tickets * 2;
-            acc = t[1] -> num_tickets * 3;
-        }
+        // std::sort(t.begin(), t.end());
 
-
+        // if (t.size() >= 2)
+        // {
+        //     t[0]->num_tickets = t[1]->num_tickets * 2;
+        //     acc = t[1]->num_tickets * 3;
+        // }
 
         return acc;
     }
@@ -144,6 +142,20 @@ namespace ghost
         enclave()->SetDeliverTicks(true);
     }
 
+    void LotteryScheduler::DiscoveryStart()
+    {
+        in_discovery_ = true;
+    }
+
+    void LotteryScheduler::DiscoveryComplete()
+    {
+        for (auto &scraper : orchs_)
+        {
+            scraper.second->RefreshAllSchedParams(kSchedCallbackFunc);
+        }
+        in_discovery_ = false;
+    }
+
     // Implicitly thread-safe because it is only called from one agent associated
     // with the default queue.
     Cpu LotteryScheduler::AssignCpu(LotteryTask *task)
@@ -178,7 +190,7 @@ namespace ghost
     void LotteryScheduler::LotterySchedule(const Cpu &cpu, BarrierToken agent_barrier, bool prio_boost)
     {
         CpuState *cs = cpu_state(cpu);
-        cs -> count += 1;
+        cs->count += 1;
         LotteryTask *next = nullptr;
         if (!prio_boost)
         {
@@ -187,29 +199,32 @@ namespace ghost
             unsigned int num_tickets = cs->run_queue.NumTickets();
             // run the lottery
             int winning_ticket = num_tickets > 0 ? 1 + (ParkMillerRand() % num_tickets) : 1;
-            std:: cout << "Winning: " << winning_ticket << std::endl;
-            if (cs -> current != nullptr) cs -> run_queue.Add(cs -> current);
+            std::cout << "Winning: " << winning_ticket << std::endl;
+            if (cs->current != nullptr)
+                cs->run_queue.Add(cs->current);
             next = cs->run_queue.PickWinner(winning_ticket);
 
-            std::cout << next << " has won lottery" << std:: endl;
-            cs -> mp[next] += 1;
+            std::cout << next << " has won lottery" << std::endl;
+            cs->mp[next] += 1;
 
             auto end = std::chrono::high_resolution_clock::now();
 
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 
-            for (auto [k, v ]: cs -> mp) {
-                std:: cout << k << " (Map): " << v << std::endl; 
+            for (auto [k, v] : cs->mp)
+            {
+                std::cout << k << " (Map): " << v << std::endl;
             }
 
             // std::cout << "Time taken by function: " << duration.count() << " microseconds" << std::endl;
             // std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
-        }else {
-            std:: cout << "pri0----" << std:: endl;
+        }
+        else
+        {
+            std::cout << "pri0----" << std::endl;
         }
 
-        std::cout << cs -> count << std::endl;
-        
+        std::cout << cs->count << std::endl;
 
         // cs->run_queue.Erase(next);
         GHOST_DPRINT(3, stderr, "LotterySchedule %s on %s cpu %d ",
@@ -275,11 +290,67 @@ namespace ghost
             Consume(cs->channel.get(), msg);
         }
 
-        
-        
         LotterySchedule(cpu, agent_barrier, agent_sw.boosted_priority());
+    }
 
+    void LotteryScheduler::UpdateSchedParams()
+    {
+        for (auto &scraper : orchs_)
+        {
+            scraper.second->RefreshSchedParams(kSchedCallbackFunc);
+        }
+    }
 
+    void LotteryScheduler::SchedParamsCallback(Orchestrator &orch, const SchedParams *sp, Gtid oldgtid)
+    {
+        Gtid gtid = sp->GetGtid();
+
+        // TODO: Get it off cpu if it is running. Assumes that oldgpid wasn't moved
+        // around to a later spot in the PrioTable. Get it off the runqueue if it is
+        // queued. Implement Scheduler::EraseFromRunqueue(oldgpid);
+        CHECK(!oldgtid || (oldgtid == gtid));
+
+        if (!gtid)
+        { // empty sched_item.
+            return;
+        }
+
+        LotteryTask *task = allocator()->GetTask(gtid);
+        if (!task)
+        {
+            // We are too early (i.e. haven't seen MSG_TASK_NEW for gtid) in which
+            // case ignore the update for now. We'll grab the latest SchedParams
+            // from shmem in the MSG_TASK_NEW handler.
+            //
+            // We are too late (i.e have already seen MSG_TASK_DEAD for gtid) in
+            // which case we just ignore the update.
+            return;
+        }
+        task->sp = sp;
+        task->num_tickets = sp->GetDeadline();
+    }
+
+    void LotteryScheduler::HandleNewGtid(LotteryTask *task, pid_t tgid)
+    {
+        CHECK_GE(tgid, 0);
+
+        if (orchs_.find(tgid) == orchs_.end())
+        {
+            auto orch = std::make_unique<Orchestrator>();
+            if (!orch->Init(tgid))
+            {
+                // If the task's group leader has already exited and closed the PrioTable
+                // fd while we are handling TaskNew, it is possible that we cannot find
+                // the PrioTable.
+                // Just set has_work so that we schedule this task and allow it to exit.
+                // We also need to give it an sp; various places call task->sp->qos_.
+                static SchedParams dummy_sp;
+                task->sp = &dummy_sp;
+                return;
+            }
+            auto pair = std::make_pair(tgid, std::move(orch));
+            orchs_.insert(std::move(pair));
+        }
     }
 
     void LotteryScheduler::TaskNew(LotteryTask *task, const Message &msg)
@@ -289,7 +360,19 @@ namespace ghost
 
         task->seqnum = msg.seqnum();
         task->run_state = LotteryTaskState::kBlocked;
-        task->num_tickets = 10;
+
+        // tgid = task group ID, one for all threads in a process
+        // We have one orchestrator per process since there is one priotable per process as all threads share the same mem region
+        // gtid = ghost task ID
+        const Gtid gtid(payload->gtid);
+        const pid_t tgid = gtid.tgid();
+        HandleNewGtid(task, tgid);
+        // for (auto &scraper : orchs_)
+        // {
+        //     scraper.second->RefreshAllSchedParams(kSchedCallbackFunc);
+        // }
+        // task->num_tickets = 10;
+
         if (payload->runnable)
         {
             task->run_state = LotteryTaskState::kRunnable;
@@ -300,6 +383,14 @@ namespace ghost
         {
             // Wait until task becomes runnable to avoid race between migration
             // and MSG_TASK_WAKEUP showing up on the default channel.
+        }
+
+        if (!in_discovery_) {
+            auto iter = orchs_.find(tgid);
+            if (iter != orchs_.end())
+            {
+                iter->second->GetSchedParams(task->gtid, kSchedCallbackFunc);
+            }
         }
     }
     void LotteryScheduler::Migrate(LotteryTask *task, Cpu cpu, BarrierToken seqnum)
@@ -485,6 +576,7 @@ namespace ghost
 
         while (!Finished() || !scheduler_->Empty(cpu()))
         {
+            scheduler_->UpdateSchedParams();
             scheduler_->Schedule(cpu(), status_word());
 
             if (verbose() && debug_out.Edge())

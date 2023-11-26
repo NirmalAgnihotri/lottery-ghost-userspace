@@ -250,6 +250,7 @@ cc_binary(
     deps = [
         ":base",
         ":ghost",
+        ":shared",
     ],
 )
 
@@ -704,13 +705,20 @@ cc_library(
     srcs = [
         "schedulers/lottery/lottery_scheduler.cc",
         "schedulers/lottery/lottery_scheduler.h",
+        "schedulers/lottery/lottery_orchestrator.cc",
     ],
     hdrs = [
         "schedulers/lottery/lottery_scheduler.h",
+        "schedulers/lottery/lottery_orchestrator.h",
     ],
     copts = compiler_flags,
     deps = [
         ":agent",
+        ":ghost",
+        ":shared",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/functional:bind_front",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
