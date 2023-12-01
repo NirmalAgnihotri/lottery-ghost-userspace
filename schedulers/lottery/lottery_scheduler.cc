@@ -7,6 +7,12 @@
 #include <chrono>
 #include <vector>
 
+bool LOG_TOTAL_TASK_WINS_LOTTERY = false;
+uint32_t SAMPLE_RATE = 50;
+uint32_t TOTAL_SAMPLES = 20000000;
+
+bool LOG_SCHEDULING_DECISION_TIME_TAKEN = true;
+
 namespace ghost
 {
     void RunCollection::Erase(LotteryTask *task)
@@ -33,26 +39,11 @@ namespace ghost
         unsigned int acc = 0;
         std::vector<LotteryTask *> t;
 
-        // debugging
-        int c_tickets = -1;
 
         for (LotteryTask *v : rq_)
         {
-            // debugging
-            t.push_back(v);
             acc += v->num_tickets;
-
-            std::cout << v << " (Tickets): " << v->num_tickets << std::endl;
         }
-
-        // std::sort(t.begin(), t.end());
-
-        // if (t.size() >= 2)
-        // {
-        //     t[0]->num_tickets = t[1]->num_tickets * 2;
-        //     acc = t[1]->num_tickets * 3;
-        // }
-
         return acc;
     }
 
@@ -194,38 +185,46 @@ namespace ghost
         LotteryTask *next = nullptr;
         if (!prio_boost)
         {
-            auto start = std::chrono::high_resolution_clock::now();
+            
             // get the total number of tickets
             unsigned int num_tickets = cs->run_queue.NumTickets();
+
+
+            auto start = std::chrono::high_resolution_clock::now();
             // run the lottery
             int winning_ticket = num_tickets > 0 ? 1 + (ParkMillerRand() % num_tickets) : 1;
-            std::cout << "Winning: " << winning_ticket << std::endl;
+            // std::cout << "Winning: " << winning_ticket << std::endl;
             if (cs->current != nullptr)
                 cs->run_queue.Add(cs->current);
             next = cs->run_queue.PickWinner(winning_ticket);
-
-            std::cout << next << " has won lottery" << std::endl;
-            cs->mp[next] += 1;
 
             auto end = std::chrono::high_resolution_clock::now();
 
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 
-            for (auto [k, v] : cs->mp)
-            {
-                std::cout << k << " (Map): " << v << std::endl;
+            if (LOG_SCHEDULING_DECISION_TIME_TAKEN && (cs -> count)% SAMPLE_RATE == 0 && (cs -> count) < SAMPLE_RATE * TOTAL_SAMPLES) {
+                auto num_processes = cs -> run_queue.Size();
+                std:: string log = "COUNT: " + std::to_string(num_processes) + ",";
+                log += std::to_string(duration.count()) + "\n";
+                write_log(log);
             }
 
-            // std::cout << "Time taken by function: " << duration.count() << " microseconds" << std::endl;
-            // std::cout << "Winning ticket is " << winning_ticket << " " << next << std::endl;
+            // std::cout << next << " has won lottery" << std::endl;
+            cs->mp[next] += 1;
+            if (LOG_TOTAL_TASK_WINS_LOTTERY && (cs -> count)% SAMPLE_RATE == 0 && (cs -> count) < SAMPLE_RATE * TOTAL_SAMPLES) {
+                std::string to_write = "";
+                for (auto [k, v] : cs->mp)
+                {
+                   uintptr_t t = reinterpret_cast<uintptr_t>(k);
+                   if (t == 0) continue;
+                   to_write += std::to_string(t) + "," + std::to_string(v) + "\n";
+                }
+                to_write + "\n";
+                write_log(to_write);
+            }
+
         }
         else
-        {
-            std::cout << "pri0----" << std::endl;
-        }
-
-        std::cout << cs->count << std::endl;
-
         // cs->run_queue.Erase(next);
         GHOST_DPRINT(3, stderr, "LotterySchedule %s on %s cpu %d ",
                      next ? next->gtid.describe() : "idling",

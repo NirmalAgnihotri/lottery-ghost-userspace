@@ -13,6 +13,11 @@
 #include "lib/agent.h"
 #include "lib/scheduler.h"
 
+
+#include <string>
+#include <fstream>
+#include <mutex>
+
 namespace ghost {
 
 enum class FifoTaskState {
@@ -112,6 +117,25 @@ class FifoScheduler : public BasicDispatchScheduler<FifoTask> {
     return num_tasks;
   }
 
+  void write_log(const std::string & message) {
+      std::lock_guard<std::mutex> lock(file_mutex);
+
+      if (CLEAR_FILE) {
+        std::ofstream clearFile(log_filename, std::ofstream::trunc);
+        clearFile.close();  // Close the file after truncation
+        if (KEEP_SAMPLES) CLEAR_FILE = false;
+      }
+
+      std::ofstream outFile(log_filename, std::ios::app);
+
+      if (!outFile.is_open()) {
+            std::cerr << "Error opening file for writing." << std::endl;
+            return;
+      }
+
+      outFile << message << std::endl;
+    }
+
   static constexpr int kDebugRunqueue = 1;
   static constexpr int kCountAllTasks = 2;
 
@@ -134,10 +158,17 @@ class FifoScheduler : public BasicDispatchScheduler<FifoTask> {
   Cpu AssignCpu(FifoTask* task);
   void DumpAllTasks();
 
+
+    std::string log_filename = "log.txt";
+    std::mutex file_mutex;
+    bool CLEAR_FILE = true;
+    const bool KEEP_SAMPLES = true;
+
   struct CpuState {
     FifoTask* current = nullptr;
     std::unique_ptr<Channel> channel = nullptr;
     FifoRq run_queue;
+    unsigned int count = 0;
   } ABSL_CACHELINE_ALIGNED;
 
   inline CpuState* cpu_state(const Cpu& cpu) { return &cpu_states_[cpu.id()]; }

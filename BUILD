@@ -255,6 +255,32 @@ cc_binary(
 )
 
 cc_binary(
+    name = "micro_exp",
+    srcs = [
+        "tests/micro_exp.cc",
+    ],
+    copts = compiler_flags,
+    deps = [
+        ":base",
+        ":ghost",
+        ":shared",
+    ],
+)
+
+cc_binary(
+    name = "em_test",
+    srcs = [
+        "tests/em_test.cc",
+    ],
+    copts = compiler_flags,
+    deps = [
+        ":base",
+        ":ghost",
+        ":shared",
+    ],
+)
+
+cc_binary(
     name = "cfs_test",
     testonly = 1,
     srcs = [

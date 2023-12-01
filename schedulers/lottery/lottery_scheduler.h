@@ -12,6 +12,10 @@
 #include "lib/scheduler.h"
 #include "shared/prio_table.h"
 #include "schedulers/lottery/lottery_orchestrator.h"
+#include <string>
+#include <fstream>
+#include <mutex>
+
 
 namespace ghost
 {
@@ -81,12 +85,6 @@ namespace ghost
     std::set<int>::iterator Begin();
     std::set<int>::iterator End();
 
-    // Erase 'task' from the runqueue.
-    //
-    // Caller must ensure that 'task' is on the runqueue in the first place
-    // (e.g. via task->queued()).
-    // void Erase(FifoTask *task);
-
     size_t Size() const
     {
       absl::MutexLock lock(&mu_);
@@ -136,6 +134,25 @@ namespace ghost
       return num_tasks;
     }
 
+    void write_log(const std::string & message) {
+      std::lock_guard<std::mutex> lock(file_mutex);
+
+      if (CLEAR_FILE) {
+        std::ofstream clearFile(log_filename, std::ofstream::trunc);
+        clearFile.close();  // Close the file after truncation
+        if (KEEP_SAMPLES) CLEAR_FILE = false;
+      }
+
+      std::ofstream outFile(log_filename, std::ios::app);
+
+      if (!outFile.is_open()) {
+            std::cerr << "Error opening file for writing." << std::endl;
+            return;
+      }
+
+      outFile << message << std::endl;
+    }
+
     static constexpr int kDebugRunqueue = 1;
     static constexpr int kCountAllTasks = 2;
 
@@ -160,6 +177,11 @@ namespace ghost
     void SchedParamsCallback(Orchestrator &orch, const SchedParams *sp,
                              Gtid oldgtid);
     void HandleNewGtid(LotteryTask *task, pid_t tgid);
+
+    std::string log_filename = "log.txt";
+    std::mutex file_mutex;
+    bool CLEAR_FILE = true;
+    const bool KEEP_SAMPLES = true;
 
     struct CpuState
     {

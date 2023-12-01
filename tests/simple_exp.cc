@@ -81,25 +81,22 @@ namespace ghost
       {
         threads.emplace_back(
             new GhostThread(GhostThread::KernelScheduler::kGhost, [&]
-                            {
+          {
           unsigned long long g = 0;
 
           for (int i = 0; i < 10000000000; i+=27) {
             g += i * (i-1) * (i+1);
-            // absl::SleepFor(absl::Milliseconds(1));
           } 
           
-          // Verify that a ghost thread implicitly clones itself in the ghost
-          // scheduling class.
           std::thread t(
               [] { CHECK_EQ(sched_getscheduler(/*pid=*/0), SCHED_GHOST); });
           t.join();
 
-          absl::SleepFor(absl::Milliseconds(10)); }));
+        }));
       }
       for (int i = 0; i < num_threads; i++)
       {
-        std::cout << "I IS " << i << std::endl;
+        // std::cout << "I IS " << i << std::endl;
         auto &t = threads[i];
         UpdateSchedItem(table_.get(), start_idx + i,
                         t->gtid(), (i + 1) * 10);
@@ -109,7 +106,7 @@ namespace ghost
       int mult = 1;
       for (int i = num_threads-1; i >= 0; i--)
       {
-        std::cout << "I IS " << i << std::endl;
+        // std::cout << "I IS " << i << std::endl;
         auto &t = threads[i];
         UpdateSchedItem(table_.get(), start_idx + i,
                         t->gtid(), mult * 100);
@@ -135,17 +132,23 @@ namespace ghost
 
           for (int i = 0; i < 10000000000; i+=27) {
             g += i * (i-1) * (i+1);
-            // absl::SleepFor(absl::Milliseconds(1));
           } 
           
-          // Verify that a ghost thread implicitly clones itself in the ghost
-          // scheduling class.
           std::thread t(
               [] { CHECK_EQ(sched_getscheduler(/*pid=*/0), SCHED_GHOST); });
           t.join();
 
-          absl::SleepFor(absl::Milliseconds(10)); }));
+          // absl::SleepFor(absl::Milliseconds(10));
+
+          }));
       }
+
+      // for (int i = 0; i < num_threads; i++)
+      // {
+      //   auto &t = threads[i];
+      //   UpdateSchedItem(table_.get(), start_idx + i,
+      //                   t->gtid(), (i + 1) * 10);
+      // }
 
       for (auto &t : threads)
         t->Join();

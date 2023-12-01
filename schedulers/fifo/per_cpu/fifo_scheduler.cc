@@ -8,6 +8,11 @@
 
 #include <memory>
 
+
+uint32_t SAMPLE_RATE = 50;
+uint32_t TOTAL_SAMPLES = 20000000;
+bool LOG_SCHEDULING_DECISION_TIME_TAKEN = true;
+
 namespace ghost
 {
 
@@ -294,9 +299,24 @@ namespace ghost
     FifoTask *next = nullptr;
     if (!prio_boost)
     {
+      cs -> count += 1;
+
+      auto start = std::chrono::high_resolution_clock::now();
+
       next = cs->current;
       if (!next)
         next = cs->run_queue.Dequeue();
+      
+      auto end = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+      if (LOG_SCHEDULING_DECISION_TIME_TAKEN && (cs -> count)% SAMPLE_RATE == 0 && (cs -> count) < SAMPLE_RATE * TOTAL_SAMPLES) {
+                auto num_processes = cs -> run_queue.Size();
+                std:: string log = "COUNT: " + std::to_string(num_processes) + ",";
+                log += std::to_string(duration.count()) + "\n";
+                write_log(log);
+            }
+
     }
 
     GHOST_DPRINT(3, stderr, "FifoSchedule %s on %s cpu %d ",
