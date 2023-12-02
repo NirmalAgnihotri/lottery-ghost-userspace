@@ -40,6 +40,19 @@ namespace ghost
         public:
             int handle(int clientSocket, std::string payload) override
             {
+                unsigned long long g = 0;
+                auto start = std::chrono::steady_clock::now();
+
+                for (int i = 0; i < 1000000000; i += 27)
+                {
+                    g += i * (i - 1) * (i + 1);
+                    // absl::SleepFor(absl::Milliseconds(1));
+                }
+                auto end = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+                std::cout << "Service B took " << duration.count() << " milliseconds to finish."
+                          << " with value " << g << std::endl;
                 const char *message = "B Done!";
                 send(clientSocket, message, strlen(message), 0);
                 return 1;
@@ -55,6 +68,7 @@ namespace ghost
             UpdateSchedItem(PrioTable *table, uint32_t sidx, const Gtid &gtid, int num_tickets)
             {
                 struct sched_item *si;
+                std::cout << "sid " << sidx << " gtid " << gtid << " " << num_tickets << std::endl;
 
                 si = table->sched_item(sidx);
 
@@ -68,10 +82,17 @@ namespace ghost
 
             void setPriority(const std::unique_ptr<PrioTable> &table_, unsigned int num_tickets, unsigned int prio_id, std::unordered_map<unsigned int, Gtid> &gtid_map)
             {
+                std::cout << "Setting PRIORTIY" << std::endl;
                 UpdateSchedItem(table_.get(), prio_id, gtid_map[prio_id], num_tickets);
             }
 
-            void handleClient(int port, int clientSocket, unsigned int prio_id, const std::unique_ptr<PrioTable> &table_, std::unordered_map<unsigned int, Gtid> &gtid_map)
+            void handleClient(int port, int clientSocket, std::string payload)
+            {
+                auto it = handlers.find(port);
+                it->second->handle(clientSocket, payload);
+            }
+
+            nlohmann::json parseClientData(int clientSocket)
             {
                 const int buffer_size = 1024;
                 char buffer[buffer_size] = {0};
@@ -104,22 +125,13 @@ namespace ghost
 
                     std::cout << "Parsed JSON:\n"
                               << jsonData.dump(2) << std::endl;
-                    unsigned int num_tickets = jsonData["numTickets"].get<unsigned int>();
-                    setPriority(table_, num_tickets, prio_id, gtid_map);
-                    for (const auto &pair : handlers)
-                    {
-                        std::cout << "Key: " << pair.first << std::endl;
-                    }
-                    auto it = handlers.find(port);
-                    it->second->handle(clientSocket, jsonData["payload"]);
+                    return jsonData;
                 }
                 catch (const nlohmann::json::exception &e)
                 {
                     std::cerr << "Error parsing JSON: " << e.what() << std::endl;
+                    return nullptr;
                 }
-
-                // Close the client socket
-                close(clientSocket);
             }
 
         public:
@@ -185,13 +197,15 @@ namespace ghost
                     }
 
                     std::cout << "Connection accepted from " << inet_ntoa(clientAddress.sin_addr) << ":" << ntohs(clientAddress.sin_port) << "\n";
+                    nlohmann::json clientData = parseClientData(clientSocket);
+                    unsigned int num_tickets = clientData["numTickets"].get<unsigned int>();
+                    std::string payload = clientData["payload"];
 
-                    // Create a new thread to handle the client
                     threads.emplace_back(
-                        new GhostThread(GhostThread::KernelScheduler::kGhost, [&, clientSocket, prio_start]
-                                        { handleClient(port, clientSocket, prio_start, table_, prio_to_gtid); }));
+                        new GhostThread(GhostThread::KernelScheduler::kGhost, [&, clientSocket, payload]
+                                        { handleClient(port, clientSocket, payload); }));
                     auto &t = threads[prio_start];
-                    UpdateSchedItem(table_.get(), prio_start, t->gtid(), 10000);
+                    UpdateSchedItem(table_.get(), prio_start, t->gtid(), num_tickets);
                     prio_to_gtid[prio_start] = t->gtid();
                     prio_start++;
                 }
