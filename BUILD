@@ -255,6 +255,20 @@ cc_binary(
 )
 
 cc_binary(
+    name = "lottery_client",
+    srcs = [
+        "tests/lottery_client.cc",
+    ],
+    copts = compiler_flags,
+    deps = [
+        ":base",
+        ":ghost",
+        ":shared",
+        "@github_nlohmann_json//:json",
+    ],
+)
+
+cc_binary(
     name = "lottery_server",
     srcs = [
         "tests/lottery_server.cc",
