@@ -20,14 +20,17 @@ namespace ghost
         class ServiceHandler
         {
         public:
-            virtual int handle(std::string payload) = 0;
+            virtual int handle(int clientSocket, std::string payload) = 0;
         };
 
         class ServiceA : public ServiceHandler
         {
         public:
-            int handle(std::string payload) override
+            int handle(int clientSocket, std::string payload) override
             {
+                std::cout << payload << std::endl;
+                const char *message = "A Done!";
+                send(clientSocket, message, strlen(message), 0);
                 return 1;
             }
         };
@@ -35,8 +38,10 @@ namespace ghost
         class ServiceB : public ServiceHandler
         {
         public:
-            int handle(std::string payload) override
+            int handle(int clientSocket, std::string payload) override
             {
+                const char *message = "B Done!";
+                send(clientSocket, message, strlen(message), 0);
                 return 1;
             }
         };
@@ -101,17 +106,17 @@ namespace ghost
                               << jsonData.dump(2) << std::endl;
                     unsigned int num_tickets = jsonData["numTickets"].get<unsigned int>();
                     setPriority(table_, num_tickets, prio_id, gtid_map);
+                    for (const auto &pair : handlers)
+                    {
+                        std::cout << "Key: " << pair.first << std::endl;
+                    }
                     auto it = handlers.find(port);
-                    it->second->handle(jsonData["payload"]);
+                    it->second->handle(clientSocket, jsonData["payload"]);
                 }
                 catch (const nlohmann::json::exception &e)
                 {
                     std::cerr << "Error parsing JSON: " << e.what() << std::endl;
                 }
-
-                // Use the mutex to protect cout
-                std::lock_guard<std::mutex> lock(mtx);
-                std::cout << "Received from client: " << buffer << "\n";
 
                 // Close the client socket
                 close(clientSocket);
@@ -138,7 +143,7 @@ namespace ghost
                 // Bind the socket to an IP address and port
                 sockaddr_in serverAddress{};
                 serverAddress.sin_family = AF_INET;
-                serverAddress.sin_port = htons(8080); // Use port 8080
+                serverAddress.sin_port = htons(port); // Use port 8080
 
                 if (inet_pton(AF_INET, "127.0.0.1", &serverAddress.sin_addr) <= 0)
                 {
@@ -161,7 +166,7 @@ namespace ghost
                     return -1;
                 }
 
-                std::cout << "Server listening on port 8080...\n";
+                std::cout << "Server listening on port " << port << "...\n";
 
                 std::vector<std::unique_ptr<ghost::GhostThread>> threads;
                 threads.reserve(1000);
