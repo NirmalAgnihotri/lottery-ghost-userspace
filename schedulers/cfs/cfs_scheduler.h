@@ -14,6 +14,10 @@
 #include <ostream>
 #include <set>
 
+#include <string>
+#include <fstream>
+#include <mutex>
+
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/str_format.h"
@@ -425,6 +429,8 @@ struct CpuState {
   // ID of the cpu.
   int id = -1;
 
+  unsigned int count = 0;
+
   bool IsIdle() const { return current == nullptr; }
   bool LocklessRqEmpty() const { return run_queue.LocklessSize() == 0; }
 } ABSL_CACHELINE_ALIGNED;
@@ -520,6 +526,31 @@ class CfsScheduler : public BasicDispatchScheduler<CfsTask> {
 
   static constexpr int kDebugRunqueue = 1;
   static constexpr int kCountAllTasks = 2;
+
+  void write_log(const std::string & message) {
+      std::lock_guard<std::mutex> lock(file_mutex);
+
+      if (CLEAR_FILE) {
+        std::ofstream clearFile(log_filename, std::ofstream::trunc);
+        clearFile.close();  // Close the file after truncation
+        if (KEEP_SAMPLES) CLEAR_FILE = false;
+      }
+
+      std::ofstream outFile(log_filename, std::ios::app);
+
+      if (!outFile.is_open()) {
+            std::cerr << "Error opening file for writing." << std::endl;
+            return;
+      }
+
+      outFile << message << std::endl;
+  }
+
+
+    std::string log_filename = "log.txt";
+    std::mutex file_mutex;
+    bool CLEAR_FILE = true;
+    const bool KEEP_SAMPLES = true;
 
  protected:
   // Note: this CPU's rq lock is held during the draining callbacks listed

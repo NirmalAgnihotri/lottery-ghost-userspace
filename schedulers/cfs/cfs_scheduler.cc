@@ -31,6 +31,10 @@
 #include "lib/logging.h"
 #include "lib/topology.h"
 
+uint32_t SAMPLE_RATE = 50;
+uint32_t TOTAL_SAMPLES = 20000000;
+bool LOG_SCHEDULING_DECISION_TIME_TAKEN = false;
+
 #define DPRINT_CFS(level, message)                               \
   do {                                                           \
     if (ABSL_PREDICT_TRUE(verbose() < level)) break;             \
@@ -816,6 +820,9 @@ void CfsScheduler::CfsSchedule(const Cpu& cpu, BarrierToken agent_barrier,
     return;
   }
 
+  cs -> count++;
+  auto start = std::chrono::high_resolution_clock::now();
+  
   cs->run_queue.mu_.Lock();
   CfsTask* next = cs->run_queue.PickNextTask(prev, allocator(), cs);
   cs->run_queue.mu_.Unlock();
@@ -826,9 +833,20 @@ void CfsScheduler::CfsSchedule(const Cpu& cpu, BarrierToken agent_barrier,
 
   cs->current = next;
 
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+
+  if (LOG_SCHEDULING_DECISION_TIME_TAKEN && (cs -> count)% SAMPLE_RATE == 0 && (cs -> count) < SAMPLE_RATE * TOTAL_SAMPLES) {
+      auto num_processes = cs -> run_queue.Size();
+      std:: string log = "COUNT: " + std::to_string(num_processes) + ",";
+      log += std::to_string(duration.count()) + "\n";
+      write_log(log);
+  }
+
   if (next) {
-    DPRINT_CFS(3, absl::StrFormat("[%s]: Picked via PickNextTask",
-                                  next->gtid.describe()));
+    // DPRINT_CFS(3, absl::StrFormat("[%s]: Picked via PickNextTask",
+    //                               next->gtid.describe()));
 
     req->Open({
         .target = next->gtid,

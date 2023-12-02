@@ -11,7 +11,7 @@ bool LOG_TOTAL_TASK_WINS_LOTTERY = false;
 uint32_t SAMPLE_RATE = 50;
 uint32_t TOTAL_SAMPLES = 20000000;
 
-bool LOG_SCHEDULING_DECISION_TIME_TAKEN = true;
+bool LOG_SCHEDULING_DECISION_TIME_TAKEN = false;
 
 namespace ghost
 {
@@ -200,7 +200,7 @@ namespace ghost
 
             auto end = std::chrono::high_resolution_clock::now();
 
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
 
             if (LOG_SCHEDULING_DECISION_TIME_TAKEN && (cs -> count)% SAMPLE_RATE == 0 && (cs -> count) < SAMPLE_RATE * TOTAL_SAMPLES) {
                 auto num_processes = cs -> run_queue.Size();

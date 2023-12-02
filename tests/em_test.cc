@@ -9,6 +9,10 @@
 
 #include <iostream>
 #include <fstream>
+#include <algorithm>
+
+#include <fstream>
+#include <mutex>
 
 #include "lib/base.h"
 #include "lib/ghost.h"
@@ -39,6 +43,32 @@ namespace ghost
             si->deadline = num_tickets;
             si->seqcount.write_end(seq);
             table->MarkUpdatedIndex(sidx, /* num_retries = */ 3);
+        }
+
+        // Function to perform matrix multiplication
+        std::vector<std::vector<int>> multiplyMatrices(const std::vector<std::vector<int>>& mat1, const std::vector<std::vector<int>>& mat2) {
+            size_t rows1 = mat1.size();
+            size_t cols1 = mat1[0].size();
+            size_t rows2 = mat2.size();
+            size_t cols2 = mat2[0].size();
+
+            if (cols1 != rows2) {
+                cols1 = rows2;
+                // std::cerr << "Error: Matrix dimensions mismatch for multiplication.\n";
+                return {};
+            }
+
+            std::vector<std::vector<int>> result(rows1, std::vector<int>(cols2, 0));
+
+            for (size_t i = 0; i < rows1; ++i) {
+                for (size_t j = 0; j < cols2; ++j) {
+                    for (size_t k = 0; k < cols1; ++k) {
+                        result[i][j] += mat1[i][k] * mat2[k][j];
+                    }
+                }
+            }
+
+            return result;
         }
 
         double compute_py_with_x(std::vector<int> &x, int &y, std::vector<double> &ps) {
@@ -171,7 +201,7 @@ namespace ghost
 
         void RunEmExperiment(const std::unique_ptr<PrioTable> &table_, uint32_t start_idx) {
             std::vector<std::unique_ptr<GhostThread>> threads;
-            uint32_t numthreads = 3;
+            uint32_t numthreads = 20;
             threads.reserve(numthreads);
 
             std::vector<std::vector<int>> xs = read_xs();
@@ -183,36 +213,16 @@ namespace ghost
             
             std::vector<double> llhs(numthreads, 0);
             std::vector<double> llh_diffs(numthreads, 1000);
-
-
-
             for (int i = 0; i < numthreads; i++) {
-                int j = i;
                 threads.emplace_back(
                     new GhostThread(GhostThread::KernelScheduler::kGhost, [&, i]{
                         unsigned int thread_idx = i;
                         std::vector<double> ps = initial_ps[thread_idx];
-
-                        std:: cout << thread_idx << std::endl;
-
-
-
-                        // for (auto d: ps) {
-                        //     std::cout << "PPPP " << d << std::endl;
-                        // }
-
                         auto end_time = std::chrono::high_resolution_clock::now();
-                        // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-
-
                         while (true) {
                             // compute differences and update global data strcutures
                             double llh = compute_llh(xs, ys, ps);
-                            // std::cout << llh << std::endl;
-                            // std::cout << "llh " <<  llh << std::endl;
-                            // std::cout << "prev_llhs " << llhs[thread_idx] << std::endl;
                             double diff = abs(abs(llh) - abs(llhs[thread_idx]));
-                            // std::cout << diff << std::endl; 
                             llh_diffs[thread_idx] =diff;
                             llhs[thread_idx] = llh;     
                             
@@ -220,18 +230,11 @@ namespace ghost
                             do_update(xs, ys, ps);
 
                             end_time = std::chrono::high_resolution_clock::now();
-                            // duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
                         }
-                        // std::cout <<"DurationT " << std::to_string(duration.count()) << std::endl;
-
-                        // std:: cout << "TOOK: "  << std::endl;
-
                         return 0;
                     })
                 );
             }
-
-
 
             for (int i = 0; i < numthreads; i++) {
                     auto &t = threads[i];
@@ -240,20 +243,15 @@ namespace ghost
 
             auto start_time = std::chrono::high_resolution_clock::now();
 
-            std::chrono::milliseconds desired_duration(300000);
-
-
+            std::chrono::milliseconds desired_duration(60000);
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             while (duration <= desired_duration) {
                 for (int i = 0; i < numthreads; i++) {
                     auto &t = threads[i];
                     double diff = llh_diffs[i];
-                    
-                    int tickets = std::max(static_cast<int>(std::round(diff * 10)) ,1);
-                    
-                    // std:: cout << tickets << std::endl;
-                    // UpdateSchedItem(table_.get(), start_idx + i, t->gtid(), tickets);
+                    int tickets = std::max(static_cast<int>(std::round(diff * 10000)) ,1);
+                    UpdateSchedItem(table_.get(), start_idx + i, t->gtid(), tickets);
                 }
 
                 end_time = std::chrono::high_resolution_clock::now();
@@ -266,15 +264,180 @@ namespace ghost
                 std:: cout << d << std::endl;
             }
 
+            auto minElement = std::min_element(llhs.begin(), llhs.end());
+            // Find maximum element
+            auto maxElement = std::max_element(llhs.begin(), llhs.end());
+            // Calculate mean using std::accumulate
+            double mean = std::accumulate(llhs.begin(), llhs.end(), 0.0) / llhs.size();
+
             std::cout <<"Duration " << std::to_string(duration.count()) << std::endl;
-            
-
-
+            std::cout << "MIN: " << *minElement << " MAX: " << *maxElement << " MEAN: " << mean << std::endl;
             for (auto &t : threads) {
                 t ->Join();
             }
 
         }
+    
+        void RunPremptiveEM(const std::unique_ptr<PrioTable> &table_, uint32_t start_idx) {
+            std::vector<std::unique_ptr<GhostThread>> threads;
+            uint32_t numthreads = 20;
+            threads.reserve(numthreads);
+
+            std::vector<std::vector<int>> xs = read_xs();
+            std::vector<int> ys = read_ys();
+            std::vector<std::vector<double>> initial_ps = read_ps(numthreads, xs[0].size());
+            
+            std::vector<double> llhs(numthreads, 0);
+            std::vector<double> llh_diffs(numthreads, 1000);
+            bool should_run = true;
+            for (int i = 0; i < numthreads; i++) {
+                int j = i;
+                threads.emplace_back(
+                    new GhostThread(GhostThread::KernelScheduler::kGhost, [&, i]{
+                        unsigned int thread_idx = i;
+                        std::vector<double> ps = initial_ps[thread_idx];
+                        auto end_time = std::chrono::high_resolution_clock::now();
+                        double diff = 1000000;
+                        while (should_run && diff > 0.00001) {
+                            // compute differences and update global data strcutures
+                            double llh = compute_llh(xs, ys, ps);
+                            double diff = abs(abs(llh) - abs(llhs[thread_idx]));
+                            llh_diffs[thread_idx] =diff;
+                            llhs[thread_idx] = llh;     
+                            
+                            //  update ps'
+                            do_update(xs, ys, ps);
+
+                            end_time = std::chrono::high_resolution_clock::now();
+                        }
+                        return 0;
+                    })
+                );
+            }
+
+            auto start_time = std::chrono::high_resolution_clock::now();
+
+            std::chrono::milliseconds desired_duration(55000);
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            while (duration <= desired_duration) {
+                for (int i = 0; i < numthreads; i++) {
+                    auto &t = threads[i];
+                }
+
+                end_time = std::chrono::high_resolution_clock::now();
+                duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            }
+
+            should_run = false;
+
+            for (auto &t : threads) {
+                t ->Join();
+            }
+
+        
+            for (double &d: llhs) {
+                std:: cout << d << std::endl;
+            }
+
+            auto minElement = std::min_element(llhs.begin(), llhs.end());
+            // Find maximum element
+            auto maxElement = std::max_element(llhs.begin(), llhs.end());
+            // Calculate mean using std::accumulate
+            double mean = std::accumulate(llhs.begin(), llhs.end(), 0.0) / llhs.size();
+
+            std::cout <<"Duration " << std::to_string(duration.count()) << std::endl;
+            std::cout << "MIN: " << *minElement << " MAX: " << *maxElement << " MEAN: " << mean << std::endl;
+        }
+
+        void RunGenericTest(const std::unique_ptr<PrioTable> &table_, uint32_t start_idx, uint32_t num_threads) {
+            std::vector<std::unique_ptr<GhostThread>> threads;
+            threads.reserve(num_threads);
+
+            // std::vector<std::vector<int>> xs = read_xs();
+
+            for (int i =0; i < num_threads; i++) {
+                threads.emplace_back(
+                    new GhostThread(GhostThread::KernelScheduler::kGhost, [&, i] {
+                        std::string thread_idx = std::to_string(i);
+
+                        std::vector<std::vector<int>> xs = read_xs();
+
+                        std::vector<std::vector<int>> xsTransposed(xs[0].size(), std::vector<int>(xs.size(), 0));
+                        for (size_t i = 0; i < xs.size(); ++i) {
+                            for (size_t j = 0; j < xs[i].size(); ++j) {
+                                xsTransposed[j][i] = xs[i][j];
+                            }
+                        }
+                        std::vector<std::vector<int>> ans = multiplyMatrices(xs, xsTransposed);
+
+                        // std::ofstream outFile("./datatmp/" + thread_idx+"out.txt");
+                        // if (outFile.is_open()) {
+                        //     for (int element : ans[0]) {
+                        //         outFile << element << ' ';
+                        //     }
+                        //     outFile.close();
+                        //     // std::cout << "First row saved to out.txt\n";
+                        // } 
+                    }
+                ));
+            }
+
+            for (int i = 0; i < num_threads; i++) {
+                    auto &t = threads[i];
+                    UpdateSchedItem(table_.get(), start_idx + i, t->gtid(), 1000);
+            }
+
+            for (auto &t : threads) {
+                t ->Join();
+            }  
+        }
+
+    void RunGenericTestWithSynch(const std::unique_ptr<PrioTable> &table_, uint32_t start_idx, uint32_t num_threads) {
+            std::vector<std::unique_ptr<GhostThread>> threads;
+            threads.reserve(num_threads);
+            std::mutex fileMutex;
+
+            // std::vector<std::vector<int>> xs = read_xs();
+
+            for (int i =0; i < num_threads; i++) {
+                threads.emplace_back(
+                    new GhostThread(GhostThread::KernelScheduler::kGhost, [&, i] {
+                        std::string thread_idx = std::to_string(i);
+
+                        std::vector<std::vector<int>> xs = read_xs();
+
+                        std::vector<std::vector<int>> xsTransposed(xs[0].size(), std::vector<int>(xs.size(), 0));
+                        for (size_t i = 0; i < xs.size(); ++i) {
+                            for (size_t j = 0; j < xs[i].size(); ++j) {
+                                xsTransposed[j][i] = xs[i][j];
+                            }
+                        }
+                        std::vector<std::vector<int>> ans = multiplyMatrices(xs, xsTransposed);
+                        std::lock_guard<std::mutex> lock(fileMutex);
+
+
+                        std::ofstream outFile("./out.txt", std::ios::app);
+                        if (outFile.is_open()) {
+                            for (int element : ans[0]) {
+                                outFile << element << ' ';
+                            }
+                            outFile.close();
+                            // std::cout << "First row saved to out.txt\n";
+                        } 
+                    }
+                ));
+            }
+
+            for (int i = 0; i < num_threads; i++) {
+                    auto &t = threads[i];
+                    UpdateSchedItem(table_.get(), start_idx + i, t->gtid(), 1000);
+            }
+
+            for (auto &t : threads) {
+                t ->Join();
+            }  
+        }         
     }
 }
 
@@ -287,10 +450,22 @@ int main()
         ghost::PrioTable::StreamCapacity::kStreamCapacity19);
     int start_idx = 0;
 
+    // {
+    //     printf("RunEmExperiment\n");
+    //     ghost::ScopedTime time;
+    //     ghost::RunEmExperiment(table_, start_idx);
+    // }
+
+    //    {
+    //     printf("RunPremptiveEM\n");
+    //     ghost::ScopedTime time;
+    //     ghost::RunPremptiveEM(table_, start_idx);
+    // } 
+
     {
-        printf("RunEmExperiment\n");
+        printf("RunGenericTest\n");
         ghost::ScopedTime time;
-        ghost::RunEmExperiment(table_, start_idx);
-    }
+        ghost::RunGenericTest(table_, start_idx, 500);
+    } 
 
 }

@@ -171,7 +171,7 @@ namespace ghost
       uint32_t num_threads = 3500;
       threads.reserve(num_threads);
 
-      std::set<int> stops = {500, 1000, 1500, 2000, 2500, 3000, 3500};
+      std::set<int> stops = {100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 };
 
        for (int i = 0; i < num_threads; i++)
       {
