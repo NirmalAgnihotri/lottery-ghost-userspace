@@ -12,10 +12,11 @@
 #include "nlohmann/json.hpp"
 using DpTuple = std::tuple<float, int, int>;
 
-std::string createMessage(unsigned int numTickets, std::string payload)
+std::string createMessage(unsigned int numTickets, int serviceId, std::string payload)
 {
     nlohmann::json service_payload;
-    service_payload["numTickets"] = 100;
+    service_payload["numTickets"] = numTickets;
+    service_payload["serviceId"] = serviceId;
     service_payload["payload"] = payload;
     std::string message_str = service_payload.dump();
     message_str.push_back('\0');
@@ -152,20 +153,20 @@ int main()
     const char *server2 = "127.0.0.1";
     std::vector<float> server_latencies;
     server_latencies.push_back(10.0);
-    server_latencies.push_back(10.0);
+    server_latencies.push_back(50.0);
     std::vector<unsigned int> ticket_allocs;
-    ticket_allocs.push_back(10);
-    ticket_allocs.push_back(5);
+    ticket_allocs.push_back(1000);
+    ticket_allocs.push_back(2000);
 
     // generate messages
-    std::vector<unsigned int> optimal_tickets = getOptimalTicketAlloc(server_latencies, ticket_allocs, 15);
+    std::vector<unsigned int> optimal_tickets = getOptimalTicketAlloc(server_latencies, ticket_allocs, 100);
     for (auto i : optimal_tickets)
     {
         std::cout << i << std::endl;
     }
 
-    std::string message1 = createMessage(100, "hello");
-    std::string message2 = createMessage(100, "Bye!");
+    std::string message1 = createMessage(50, 1, "hello");
+    std::string message2 = createMessage(50, 2, "Bye!");
 
     const char *buffer1 = message1.c_str();
     size_t bufferSize1 = message1.size();
@@ -179,7 +180,7 @@ int main()
     auto start = std::chrono::steady_clock::now();
 
     std::thread thread1(sendRequest, server1, 8080, buffer1, bufferSize1, std::move(promise1));
-    std::thread thread2(sendRequest, server2, 8082, buffer2, bufferSize2, std::move(promise2));
+    std::thread thread2(sendRequest, server2, 8080, buffer2, bufferSize2, std::move(promise2));
 
     // Wait for both threads to finish
     thread1.join();

@@ -97,9 +97,9 @@ namespace ghost
                 UpdateSchedItem(table_.get(), prio_id, gtid_map[prio_id], num_tickets);
             }
 
-            void handleClient(int port, int clientSocket, std::string payload)
+            void handleClient(int port, int clientSocket, int service_id, std::string payload)
             {
-                auto it = handlers.find(port);
+                auto it = handlers.find(service_id);
                 it->second->handle(clientSocket, payload);
             }
 
@@ -146,9 +146,9 @@ namespace ghost
             }
 
         public:
-            void registerServiceHandler(int port, std::unique_ptr<ServiceHandler> handler)
+            void registerServiceHandler(int serviceId, std::unique_ptr<ServiceHandler> handler)
             {
-                handlers[port] = std::move(handler);
+                handlers[serviceId] = std::move(handler);
             }
 
             int startServer(int port, const std::unique_ptr<PrioTable> &table_)
@@ -191,27 +191,28 @@ namespace ghost
 
                 std::cout << "Server listening on port " << port << "...\n";
 
-                // Spawn the competing thread
-                // auto competing_thread = new GhostThread(GhostThread::KernelScheduler::kGhost, [&]
-                //                                         {
-                //                                             unsigned long long g = 0;
-
-                //                                             for (int i = 0; i < 10000000000; i += 27)
-                //                                             {
-                //                                                 g += i * (i - 1) * (i + 1);
-                //                                                 // absl::SleepFor(absl::Milliseconds(1));
-                //                                             } });
-                // unsigned int comp_num_tickets = 300;
-                // if (port == 8080)
-                // {
-                //     comp_num_tickets = 100;
-                // }
-                // UpdateSchedItem(table_.get(), prio_start,
-                //                 competing_thread->gtid(), comp_num_tickets);
-                // prio_start++;
-
                 std::vector<std::unique_ptr<ghost::GhostThread>> threads;
                 threads.reserve(1000);
+
+                for (int i = 0; i < 2; ++i)
+                {
+                    threads.emplace_back(new GhostThread(GhostThread::KernelScheduler::kGhost, [&]
+                                                         {
+                                                            unsigned long long g = 0;
+
+                                                            for (int i = 0; i < std::pow(10, 11); i += 27)
+                                                            {
+                                                                g += i * (i - 1) * (i + 1);
+                                                            }
+                                                            std::cout << g << std::endl; }));
+                }
+                for (int i = 0; i < 2; ++i)
+                {
+                    auto &t = threads[i];
+                    UpdateSchedItem(table_.get(), prio_start + i, t->gtid(), (i + 1) * 1000);
+                }
+
+                prio_start += 2;
 
                 while (true)
                 {
@@ -229,11 +230,12 @@ namespace ghost
                     std::cout << "Connection accepted from " << inet_ntoa(clientAddress.sin_addr) << ":" << ntohs(clientAddress.sin_port) << "\n";
                     nlohmann::json clientData = parseClientData(clientSocket);
                     unsigned int num_tickets = clientData["numTickets"].get<unsigned int>();
+                    int service_id = clientData["serviceId"].get<int>();
                     std::string payload = clientData["payload"];
 
                     threads.emplace_back(
-                        new GhostThread(GhostThread::KernelScheduler::kGhost, [&, clientSocket, payload]
-                                        { handleClient(port, clientSocket, payload); }));
+                        new GhostThread(GhostThread::KernelScheduler::kGhost, [&, clientSocket, service_id, payload]
+                                        { handleClient(port, clientSocket, service_id, payload); }));
                     auto &t = threads[prio_start];
                     UpdateSchedItem(table_.get(), prio_start, t->gtid(), num_tickets);
                     prio_to_gtid[prio_start] = t->gtid();
@@ -262,8 +264,8 @@ int main(int argc, char *argv[])
     }
     int port = std::stoi(argv[1]);
     ghost::Server server;
-    server.registerServiceHandler(8080, std::make_unique<ghost::ServiceA>());
-    server.registerServiceHandler(8082, std::make_unique<ghost::ServiceB>());
+    server.registerServiceHandler(1, std::make_unique<ghost::ServiceA>());
+    server.registerServiceHandler(2, std::make_unique<ghost::ServiceB>());
     const int kPrioMax = 51200;
 
     auto table_ = std::make_unique<ghost::PrioTable>(
