@@ -28,7 +28,19 @@ namespace ghost
         public:
             int handle(int clientSocket, std::string payload) override
             {
-                std::cout << payload << std::endl;
+                unsigned long long g = 0;
+                auto start = std::chrono::steady_clock::now();
+
+                for (int i = 0; i < std::pow(10, 7); i += 27)
+                {
+                    g += i * (i - 1) * (i + 1);
+                    // absl::SleepFor(absl::Milliseconds(1));
+                }
+                auto end = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+                std::cout << "Service A took " << duration.count() << " milliseconds to finish."
+                          << " with value " << g << std::endl;
                 const char *message = "A Done!";
                 send(clientSocket, message, strlen(message), 0);
                 return 1;
@@ -43,7 +55,7 @@ namespace ghost
                 unsigned long long g = 0;
                 auto start = std::chrono::steady_clock::now();
 
-                for (int i = 0; i < 1000000000; i += 27)
+                for (int i = 0; i < std::pow(10, 9); i += 27)
                 {
                     g += i * (i - 1) * (i + 1);
                     // absl::SleepFor(absl::Milliseconds(1));
@@ -82,7 +94,6 @@ namespace ghost
 
             void setPriority(const std::unique_ptr<PrioTable> &table_, unsigned int num_tickets, unsigned int prio_id, std::unordered_map<unsigned int, Gtid> &gtid_map)
             {
-                std::cout << "Setting PRIORTIY" << std::endl;
                 UpdateSchedItem(table_.get(), prio_id, gtid_map[prio_id], num_tickets);
             }
 
@@ -179,6 +190,25 @@ namespace ghost
                 }
 
                 std::cout << "Server listening on port " << port << "...\n";
+
+                // Spawn the competing thread
+                // auto competing_thread = new GhostThread(GhostThread::KernelScheduler::kGhost, [&]
+                //                                         {
+                //                                             unsigned long long g = 0;
+
+                //                                             for (int i = 0; i < 10000000000; i += 27)
+                //                                             {
+                //                                                 g += i * (i - 1) * (i + 1);
+                //                                                 // absl::SleepFor(absl::Milliseconds(1));
+                //                                             } });
+                // unsigned int comp_num_tickets = 300;
+                // if (port == 8080)
+                // {
+                //     comp_num_tickets = 100;
+                // }
+                // UpdateSchedItem(table_.get(), prio_start,
+                //                 competing_thread->gtid(), comp_num_tickets);
+                // prio_start++;
 
                 std::vector<std::unique_ptr<ghost::GhostThread>> threads;
                 threads.reserve(1000);

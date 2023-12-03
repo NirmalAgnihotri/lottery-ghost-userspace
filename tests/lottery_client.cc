@@ -5,8 +5,12 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <future>
+#include <limits>
+#include <algorithm>
+#include <tuple>
 
 #include "nlohmann/json.hpp"
+using DpTuple = std::tuple<float, int, int>;
 
 std::string createMessage(unsigned int numTickets, std::string payload)
 {
@@ -16,6 +20,67 @@ std::string createMessage(unsigned int numTickets, std::string payload)
     std::string message_str = service_payload.dump();
     message_str.push_back('\0');
     return message_str;
+}
+
+float compute_latency(unsigned int assigned_tickets, unsigned int total_service_tickets, float service_latency)
+{
+    float proportion = (assigned_tickets * 1.0) / ((assigned_tickets + total_service_tickets) * 1.0);
+    return ((1 - proportion) + 1) * service_latency;
+}
+
+void print_tuple(DpTuple &tuple)
+{
+    std::cout << std::get<0>(tuple) << " " << std::get<1>(tuple) << " " << std::get<2>(tuple) << std::endl;
+}
+
+std::vector<unsigned int> getOptimalTicketAlloc(const std::vector<float> &service_latencies, const std::vector<unsigned int> &service_tickets, unsigned int t)
+{
+    unsigned int n = service_latencies.size();
+
+    std::vector<std::vector<DpTuple>> dp(n, std::vector<DpTuple>(t));
+
+    for (int i = t - 1; i >= 0; --i)
+    {
+        float latency = compute_latency(t - i, service_tickets[n - 1], service_latencies[n - 1]);
+        dp[n - 1][i] = std::make_tuple(latency, t - i, -1);
+    }
+
+    for (int i = n - 2; i >= 0; --i)
+    {
+        for (int j = t - 1; j >= 0; --j)
+        {
+            float min_latency = std::numeric_limits<float>::max();
+            unsigned int my_tickets = 1;
+            unsigned int my_optimal_tickets = 1;
+            int optimal_prev_ptr = -1;
+            for (int k = j + 1; k < t; ++k)
+            {
+                float my_latency = compute_latency(my_tickets, service_tickets[i], service_latencies[i]);
+                const DpTuple &prev = dp[i + 1][k];
+                float latency_prev = std::get<0>(prev);
+                float curr_latency = std::max(my_latency, latency_prev);
+                if (curr_latency < min_latency)
+                {
+                    min_latency = curr_latency;
+                    my_optimal_tickets = my_tickets;
+                    optimal_prev_ptr = k;
+                }
+
+                my_tickets++;
+            }
+            dp[i][j] = std::make_tuple(min_latency, my_optimal_tickets, optimal_prev_ptr);
+        }
+    }
+
+    std::vector<unsigned int> ticket_allocs(n);
+    int j = 0;
+    for (int i = 0; i < ticket_allocs.size(); ++i)
+    {
+        const DpTuple &curr = dp[i][j];
+        ticket_allocs[i] = std::get<1>(curr);
+        j = std::get<2>(curr);
+    }
+    return ticket_allocs;
 }
 
 void sendRequest(const char *serverAddress, int port, const char *message, size_t message_len, std::promise<std::string> &&promise)
@@ -85,8 +150,20 @@ int main()
 
     const char *server1 = "127.0.0.1";
     const char *server2 = "127.0.0.1";
+    std::vector<float> server_latencies;
+    server_latencies.push_back(10.0);
+    server_latencies.push_back(10.0);
+    std::vector<unsigned int> ticket_allocs;
+    ticket_allocs.push_back(10);
+    ticket_allocs.push_back(5);
 
     // generate messages
+    std::vector<unsigned int> optimal_tickets = getOptimalTicketAlloc(server_latencies, ticket_allocs, 15);
+    for (auto i : optimal_tickets)
+    {
+        std::cout << i << std::endl;
+    }
+
     std::string message1 = createMessage(100, "hello");
     std::string message2 = createMessage(100, "Bye!");
 
